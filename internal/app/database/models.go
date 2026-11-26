@@ -531,4 +531,70 @@ type GroupTask struct {
 // TableName pins the table name for GroupTask.
 func (GroupTask) TableName() string { return "group_tasks" }
 
+// BotChannel stores one configured external IM bot channel (e.g. WeChat iLink).
+// Sensitive credentials (bot_token) live in the platform secret store; only
+// SecretRef is stored here. Each channel binds a dedicated Chat conversation
+// (and its assistant ChatGroup) so both IM users and web workbench users share
+// one unified conversation stream. Table: bot_channels.
+type BotChannel struct {
+	ID               uint       `gorm:"primaryKey;column:id"`
+	Name             string     `gorm:"column:name;not null"`
+	ChannelType      string     `gorm:"column:channel_type;not null;default:'wechat';index"`
+	Enabled          bool       `gorm:"column:enabled;not null;default:false"`
+	Status           string     `gorm:"column:status;not null;default:'unconfigured'"`
+	LastError        string     `gorm:"column:last_error;type:text"`
+	SecretRef        string     `gorm:"column:secret_ref"`
+	AccountID        string     `gorm:"column:account_id"`
+	ModelID          uint       `gorm:"column:model_id;not null;default:0"`
+	PromptID         uint       `gorm:"column:prompt_id;not null;default:0"`
+	SystemPrompt     string     `gorm:"column:system_prompt;type:text"`
+	DefaultProjectID uint       `gorm:"column:default_project_id;not null;default:0"`
+	DefaultBackend   string     `gorm:"column:default_backend"`
+	AutoNotify       bool       `gorm:"column:auto_notify;not null;default:true"`
+	ChatGroupID      uint       `gorm:"column:chat_group_id;not null;default:0;index"`
+	ChatID           uint       `gorm:"column:chat_id;not null;default:0;index"`
+	UpdateCursor     string     `gorm:"column:update_cursor;type:text"`
+	LastConnectedAt  *time.Time `gorm:"column:last_connected_at"`
+	CreatedAt        time.Time  `gorm:"column:created_at"`
+	UpdatedAt        time.Time  `gorm:"column:updated_at"`
+}
+
+// TableName pins the table name for BotChannel.
+func (BotChannel) TableName() string { return "bot_channels" }
+
+// BotChannelContext persists the latest external reply context token per
+// (channel_id, external_user_id) so proactive session notifications survive
+// platform restarts. Table: bot_channel_contexts.
+type BotChannelContext struct {
+	ID             uint      `gorm:"primaryKey;column:id"`
+	ChannelID      uint      `gorm:"column:channel_id;not null;uniqueIndex:idx_bot_ctx_channel_user"`
+	ExternalUserID string    `gorm:"column:external_user_id;not null;uniqueIndex:idx_bot_ctx_channel_user"`
+	ContextToken   string    `gorm:"column:context_token;type:text"`
+	LastMessageAt  time.Time `gorm:"column:last_message_at;index"`
+	CreatedAt      time.Time `gorm:"column:created_at"`
+	UpdatedAt      time.Time `gorm:"column:updated_at"`
+}
+
+// TableName pins the table name for BotChannelContext.
+func (BotChannelContext) TableName() string { return "bot_channel_contexts" }
+
+// BotSessionWatch tracks agent sessions initiated or subscribed from a bot
+// channel so completion summaries can be pushed back to the originating user.
+// Table: bot_session_watches.
+type BotSessionWatch struct {
+	ID             uint      `gorm:"primaryKey;column:id"`
+	ChannelID      uint      `gorm:"column:channel_id;not null;index"`
+	ExternalUserID string    `gorm:"column:external_user_id;not null"`
+	ProjectID      uint      `gorm:"column:project_id;not null;index"`
+	SessionID      string    `gorm:"column:session_id;not null;uniqueIndex:idx_bot_watch_session_channel"`
+	WatchChannelID uint      `gorm:"column:watch_channel_id;not null;uniqueIndex:idx_bot_watch_session_channel"`
+	Status         string    `gorm:"column:status;not null;default:'watching';index"` // "watching" | "notified" | "failed"
+	LastError      string    `gorm:"column:last_error;type:text"`
+	CreatedAt      time.Time `gorm:"column:created_at"`
+	UpdatedAt      time.Time `gorm:"column:updated_at"`
+}
+
+// TableName pins the table name for BotSessionWatch.
+func (BotSessionWatch) TableName() string { return "bot_session_watches" }
+
 

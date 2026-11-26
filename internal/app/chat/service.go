@@ -87,17 +87,40 @@ func WithDefaultMaxSteps(resolver func() int) Option {
 	}
 }
 
+// ToolPolicy allows an external domain (such as the Bot engine) to customize
+// the tool set, step budget, default model, context values and system prompt
+// for specific chats without introducing a dependency from chat onto that domain.
+type ToolPolicy struct {
+	Executor          ToolExecutor
+	MaxSteps          int
+	ExtraSystemPrompt string
+	ModelID           uint
+	DisableTools      bool
+	WrapContext       func(context.Context) context.Context
+}
+
+// ToolPolicyResolver resolves an optional per-chat ToolPolicy.
+type ToolPolicyResolver func(chatID uint) (ToolPolicy, bool)
+
+// WithToolPolicyResolver injects a per-chat tool policy resolver.
+func WithToolPolicyResolver(resolver ToolPolicyResolver) Option {
+	return func(s *Service) {
+		s.toolPolicyResolver = resolver
+	}
+}
+
 // Service owns pure-chat conversations, their persistence and their in-process
 // generation state.
 type Service struct {
-	repo            Repository
-	models          ModelResolver
-	completer       Completer
-	toolExecutor    ToolExecutor
-	promptReader    PromptReader
-	defaultMaxSteps func() int
-	manager         *runManager
-	eventsMgr       *events.Manager
+	repo               Repository
+	models             ModelResolver
+	completer          Completer
+	toolExecutor       ToolExecutor
+	promptReader       PromptReader
+	defaultMaxSteps    func() int
+	toolPolicyResolver ToolPolicyResolver
+	manager            *runManager
+	eventsMgr          *events.Manager
 
 	baseCtx   context.Context
 	cancel    context.CancelFunc
@@ -115,6 +138,11 @@ func WithEventsManager(mgr *events.Manager) Option {
 // SetEventsManager attaches the platform-wide unified event manager.
 func (s *Service) SetEventsManager(mgr *events.Manager) {
 	s.eventsMgr = mgr
+}
+
+// SetToolPolicyResolver attaches a per-chat tool policy resolver after construction.
+func (s *Service) SetToolPolicyResolver(resolver ToolPolicyResolver) {
+	s.toolPolicyResolver = resolver
 }
 
 // OnSubscribe implements events.ChannelHandler for the "chat" channel.
@@ -328,6 +356,11 @@ func (s *Service) Send(ctx context.Context, chatID uint, input SendInput) (Chat,
 	if input.ModelID != 0 {
 		modelID = input.ModelID
 	}
+	if modelID == 0 && s.toolPolicyResolver != nil {
+		if policy, ok := s.toolPolicyResolver(chat.ID); ok && policy.ModelID != 0 {
+			modelID = policy.ModelID
+		}
+	}
 	model, err := s.resolveModel(modelID)
 	if err != nil {
 		return Chat{}, err
@@ -363,6 +396,169 @@ func (s *Service) Send(ctx context.Context, chatID uint, input SendInput) (Chat,
 	s.startGeneration(runCtx, run, chat, model, "")
 	chat.Running = true
 	return chat, nil
+}
+
+// CreateSilent creates a conversation (with an optional welcome message) without
+// triggering an LLM completion turn. Used when provisioning channel-bound Bot chats.
+func (s *Service) CreateSilent(groupID uint, title string, modelID uint, systemPrompt string, welcomeText string) (Chat, error) {
+	now := time.Now().UTC()
+	var modelName string
+	if modelID > 0 {
+		if m, err := s.resolveModel(modelID); err == nil {
+			modelName = m.Name
+		}
+	}
+	trimmedTitle := strings.TrimSpace(title)
+	if trimmedTitle == "" {
+		trimmedTitle = "Bot 对话"
+	}
+	chat := Chat{
+		GroupID:      groupID,
+		Title:        trimmedTitle,
+		ModelID:      modelID,
+		ModelName:    modelName,
+		SystemPrompt: strings.TrimSpace(systemPrompt),
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+	var welcome *Message
+	if strings.TrimSpace(welcomeText) != "" {
+		welcome = &Message{
+			Role:      RoleAssistant,
+			Text:      strings.TrimSpace(welcomeText),
+			Status:    StatusComplete,
+			ModelID:   modelID,
+			ModelName: modelName,
+			CreatedAt: now,
+			UpdatedAt: now,
+		}
+	}
+	if err := s.repo.CreateEmptyChat(&chat, welcome); err != nil {
+		return Chat{}, err
+	}
+	return chat, nil
+}
+
+// AppendNotice persists a standalone assistant notification message in the chat
+// and publishes it to subscribers. Used for asynchronous completion notifications.
+func (s *Service) AppendNotice(chatID uint, text string) error {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return nil
+	}
+	chat, err := s.repo.GetChat(chatID)
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	msg := Message{
+		ChatID:    chat.ID,
+		Role:      RoleAssistant,
+		Text:      trimmed,
+		Status:    StatusComplete,
+		ModelID:   chat.ModelID,
+		ModelName: chat.ModelName,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	if err := s.repo.AppendMessage(&chat, &msg); err != nil {
+		return err
+	}
+	s.manager.broadcast(chat.ID, Event{
+		ChatID:    chat.ID,
+		Timestamp: now,
+		Type:      EventMessageUpdate,
+		Message:   &msg,
+	})
+	s.manager.broadcast(chat.ID, Event{
+		ChatID:       chat.ID,
+		Timestamp:    now,
+		Type:         EventConversation,
+		Conversation: &chat,
+	})
+	return nil
+}
+
+// SendAndWait sends a user message to chatID and blocks until the assistant turn
+// finishes or ctx is cancelled, returning the persisted assistant Message.
+func (s *Service) SendAndWait(ctx context.Context, chatID uint, input SendInput) (Message, error) {
+	chat, err := s.repo.GetChat(chatID)
+	if err != nil {
+		return Message{}, err
+	}
+	text, images, err := normalizeInput(input.Text, input.Images)
+	if err != nil {
+		return Message{}, err
+	}
+	modelID := chat.ModelID
+	if input.ModelID != 0 {
+		modelID = input.ModelID
+	}
+	if modelID == 0 && s.toolPolicyResolver != nil {
+		if policy, ok := s.toolPolicyResolver(chat.ID); ok && policy.ModelID != 0 {
+			modelID = policy.ModelID
+		}
+	}
+	model, err := s.resolveModel(modelID)
+	if err != nil {
+		return Message{}, err
+	}
+	if len(images) > 0 && !model.SupportsImage {
+		return Message{}, ErrUnsupportedImage
+	}
+
+	run, runCtx, err := s.begin(chat.ID)
+	if err != nil {
+		return Message{}, err
+	}
+	stopLink := context.AfterFunc(ctx, func() {
+		run.cancel()
+	})
+	defer stopLink()
+
+	now := time.Now().UTC()
+	user := Message{
+		Role:      RoleUser,
+		Text:      text,
+		Images:    images,
+		Status:    StatusComplete,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
+	assistant := pendingAssistant(model, now)
+	chat.ModelID = model.ID
+	chat.ModelName = model.Name
+	if err := s.repo.AppendExchange(&chat, &user, &assistant); err != nil {
+		s.abort(run)
+		return Message{}, err
+	}
+	s.manager.setAssistantID(run, assistant.ID)
+	if err := s.publishSnapshot(chat.ID); err != nil {
+		log.Printf("chat: publish send snapshot for %d: %v", chat.ID, err)
+	}
+	s.startGeneration(runCtx, run, chat, model, "")
+
+	select {
+	case <-run.done:
+	case <-ctx.Done():
+		run.cancel()
+		return Message{}, ctx.Err()
+	}
+
+	final, err := s.repo.GetMessage(chat.ID, assistant.ID)
+	if err != nil {
+		return Message{}, err
+	}
+	if final.Status == StatusFailed {
+		if final.Error != "" {
+			return final, fmt.Errorf("chat generation failed: %s", final.Error)
+		}
+		return final, fmt.Errorf("chat generation failed: %s", final.ErrorCode)
+	}
+	if final.Status == StatusCancelled {
+		return final, context.Canceled
+	}
+	return final, nil
 }
 
 // Stop cancels the conversation's active generation. Stopping an idle chat is
@@ -606,6 +802,8 @@ func (s *Service) runGeneration(ctx context.Context, run *runState, chat Chat, m
 	if s.defaultMaxSteps != nil {
 		if d := s.defaultMaxSteps(); d > 0 {
 			maxSteps = d
+		} else if d < 0 {
+			maxSteps = 100
 		}
 	}
 	if len(request.Tools) > 0 {
@@ -614,11 +812,31 @@ func (s *Service) runGeneration(ctx context.Context, run *runState, chat Chat, m
 		}
 	}
 
+	activeExecutor := s.toolExecutor
+	loopCtx := ctx
+	if s.toolPolicyResolver != nil {
+		if policy, ok := s.toolPolicyResolver(chat.ID); ok {
+			if policy.DisableTools {
+				activeExecutor = nil
+			} else if policy.Executor != nil {
+				activeExecutor = policy.Executor
+			}
+			if policy.MaxSteps > 0 {
+				maxSteps = policy.MaxSteps
+			} else if policy.MaxSteps < 0 {
+				maxSteps = 100
+			}
+			if policy.WrapContext != nil {
+				loopCtx = policy.WrapContext(loopCtx)
+			}
+		}
+	}
+
 	// Adapt to unified agentloop runner
 	loopCompleter := NewAgentLoopCompleter(s.completer)
 	var loopRegistry agentloop.Registry
-	if s.toolExecutor != nil && len(request.Tools) > 0 {
-		loopRegistry = NewToolExecutorRegistry(s.toolExecutor)
+	if activeExecutor != nil && len(request.Tools) > 0 {
+		loopRegistry = NewToolExecutorRegistry(activeExecutor)
 	}
 
 	runner := agentloop.NewRunner(loopCompleter, loopRegistry)
@@ -640,7 +858,7 @@ func (s *Service) runGeneration(ctx context.Context, run *runState, chat Chat, m
 		Messages: loopMessages,
 	}
 
-	_, streamErr := runner.Run(ctx, loopReq, agentloop.LoopOptions{
+	_, streamErr := runner.Run(loopCtx, loopReq, agentloop.LoopOptions{
 		MaxSteps:   maxSteps,
 		ForceFinal: true,
 		OnDelta: func(delta agentloop.CompletionDelta) {
@@ -750,6 +968,20 @@ func (s *Service) completionRequest(chatID, assistantID uint, model modelconfig.
 			systemPromptText = p.Content
 		}
 	}
+	var (
+		policy    ToolPolicy
+		hasPolicy bool
+	)
+	if s.toolPolicyResolver != nil {
+		policy, hasPolicy = s.toolPolicyResolver(chat.ID)
+	}
+	if hasPolicy && strings.TrimSpace(policy.ExtraSystemPrompt) != "" {
+		if strings.TrimSpace(systemPromptText) == "" {
+			systemPromptText = strings.TrimSpace(policy.ExtraSystemPrompt)
+		} else {
+			systemPromptText = strings.TrimSpace(systemPromptText) + "\n\n" + strings.TrimSpace(policy.ExtraSystemPrompt)
+		}
+	}
 	if strings.TrimSpace(systemPromptText) != "" {
 		out = append(out, CompletionMessage{
 			Role: "system",
@@ -771,7 +1003,11 @@ func (s *Service) completionRequest(chatID, assistantID uint, model modelconfig.
 		out = append(out, CompletionMessage{Role: message.Role, Text: message.Text, Images: message.Images})
 	}
 	var tools []ToolDefinition
-	if s.toolExecutor != nil && chat.GroupID != 0 {
+	if hasPolicy {
+		if !policy.DisableTools && policy.Executor != nil {
+			tools = policy.Executor.Definitions()
+		}
+	} else if s.toolExecutor != nil && chat.GroupID != 0 {
 		if group, err := s.repo.GetGroup(chat.GroupID); err == nil && group.EnablePlatformTools {
 			tools = s.toolExecutor.Definitions()
 		}

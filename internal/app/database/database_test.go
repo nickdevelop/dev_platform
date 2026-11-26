@@ -577,3 +577,20 @@ func TestMigrateExtendsChatGroupsAsAssistants(t *testing.T) {
 		t.Fatalf("second Migrate: %v", err)
 	}
 }
+
+func TestMigrateCreatesBotTables(t *testing.T) {
+	db := mustOpen(t, filepath.Join(t.TempDir(), "data"))
+	mustMigrate(t, db)
+
+	for _, model := range []any{&BotChannel{}, &BotChannelContext{}, &BotSessionWatch{}} {
+		if !db.Migrator().HasTable(model) {
+			t.Errorf("table for %T does not exist after migration", model)
+		}
+	}
+	if !db.Migrator().HasIndex(&BotChannelContext{}, "idx_bot_ctx_channel_user") {
+		t.Error("bot_channel_contexts unique index idx_bot_ctx_channel_user is missing")
+	}
+	if !db.Migrator().HasIndex(&BotSessionWatch{}, "idx_bot_watch_session_channel") {
+		t.Error("bot_session_watches unique index idx_bot_watch_session_channel is missing")
+	}
+}

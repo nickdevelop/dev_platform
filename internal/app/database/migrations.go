@@ -614,6 +614,16 @@ var migrationSteps = []migrationStep{
 		}
 		return nil
 	}},
+	{version: 42, name: "create_bot_channel_tables", run: func(tx *gorm.DB) error {
+		for _, model := range []any{&BotChannel{}, &BotChannelContext{}, &BotSessionWatch{}} {
+			if !tx.Migrator().HasTable(model) {
+				if err := tx.Migrator().CreateTable(model); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}},
 }
 
 // Migrate brings the schema to the latest version: it creates the

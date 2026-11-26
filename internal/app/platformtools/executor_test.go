@@ -175,3 +175,26 @@ func TestExecutorProjectsAndPromptsLifecycle(t *testing.T) {
 		t.Fatalf("expected unknown platform tool error, got %v", err)
 	}
 }
+
+func TestFilteredExecutorAndCatalog(t *testing.T) {
+	projectSvc, promptSvc := setupTestServices(t)
+	executor := NewExecutor(projectSvc, promptSvc)
+
+	catalog := executor.ToolCatalog()
+	if len(catalog) < 12 {
+		t.Fatalf("expected >= 12 tools in catalog, got %d", len(catalog))
+	}
+
+	filtered := executor.FilteredExecutor([]string{"platform_list_projects"})
+	defs := filtered.Definitions()
+	if len(defs) != 1 || defs[0].Function.Name != "platform_list_projects" {
+		t.Fatalf("unexpected filtered definitions: %+v", defs)
+	}
+
+	if _, err := filtered.Execute(context.Background(), "platform_list_projects", "{}"); err != nil {
+		t.Fatalf("allowed tool failed: %v", err)
+	}
+	if _, err := filtered.Execute(context.Background(), "platform_list_prompts", "{}"); err == nil {
+		t.Fatal("expected disallowed tool to fail")
+	}
+}

@@ -22,6 +22,7 @@ import EnginesView from './features/engines/EnginesView.vue'
 import AssistantEngineView from './features/engines/AssistantEngineView.vue'
 import CoderEngineView from './features/engines/CoderEngineView.vue'
 import OrchestratorEngineView from './features/engines/OrchestratorEngineView.vue'
+import BotEngineView from './features/engines/BotEngineView.vue'
 import AgentSettingsView from './features/engines/AgentSettingsView.vue'
 import AppearanceSettings from './features/settings/AppearanceSettings.vue'
 import OrgPromptsView from './features/organization/prompts/OrgPromptsView.vue'
@@ -117,6 +118,7 @@ export function createAppRouter() {
               { path: 'steward', redirect: { name: 'engines-assistant' } },
               { path: 'coder', name: 'engines-coder', component: CoderEngineView },
               { path: 'orchestrator', name: 'engines-orchestrator', component: OrchestratorEngineView },
+              { path: 'bot', name: 'engines-bot', component: BotEngineView },
               { path: 'agents', name: 'engines-agents', component: AgentSettingsView },
               { path: 'core', redirect: { name: 'engines-assistant' } },
             ],

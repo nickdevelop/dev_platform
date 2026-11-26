@@ -19,9 +19,13 @@ type SessionLister interface {
 
 // Executor implements chat.ToolExecutor to provide platform management capabilities.
 type Executor struct {
-	projects *projects.Service
-	prompts  *prompts.Service
-	sessions SessionLister
+	projects    *projects.Service
+	prompts     *prompts.Service
+	sessions    SessionLister
+	worktrees   WorktreeLister
+	sessionCtrl SessionController
+	agentModels ModelCatalogLister
+	teams       TeamController
 }
 
 // NewExecutor creates a new platform tool executor.
@@ -35,6 +39,16 @@ func NewExecutor(projects *projects.Service, prompts *prompts.Service, sessionLi
 		prompts:  prompts,
 		sessions: sl,
 	}
+}
+
+// Configure applies optional collaborators to the executor.
+func (e *Executor) Configure(opts ...ExecutorOption) *Executor {
+	for _, opt := range opts {
+		if opt != nil {
+			opt(e)
+		}
+	}
+	return e
 }
 
 var _ chat.ToolExecutor = (*Executor)(nil)
@@ -199,6 +213,9 @@ func (e *Executor) Execute(ctx context.Context, name string, argumentsJSON strin
 	case "platform_delete_prompt":
 		return e.deletePrompt(argumentsJSON)
 	default:
+		if res, handled, err := e.executeExtended(ctx, name, argumentsJSON); handled {
+			return res, err
+		}
 		return "", fmt.Errorf("unknown platform tool: %s", name)
 	}
 }

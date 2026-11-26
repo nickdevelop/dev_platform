@@ -4,7 +4,7 @@ import type { InteractionSnapshot, TurnPayload } from './sessions'
 export interface EventEnvelope<T = unknown> {
   id?: number
   busId?: string
-  channel: 'sessions' | 'chat' | 'tasks' | 'system' | string
+  channel: 'sessions' | 'chat' | 'tasks' | 'bot' | 'system' | string
   targetId: string
   eventType: string
   timestamp: number

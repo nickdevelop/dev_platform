@@ -308,6 +308,8 @@ cd web && npm run build              # 生产构建，关注 css/js 体积不要
    - **两个只能靠浏览器发现的缺陷（已修）**：（a）列宽预算——服务代理八列声明 930px 而画布实测只有 866px，表格开横向滚动后 `fixed="right"` 的操作列盖住了「更新时间」，且最后一列芯片被削一半（重排到 854px，并新增 `settings-table-budget.spec.ts` 守卫）；（b）`el-input` 的 `prefix` / `suffix` 只有槽没有 prop，写成属性会落到原生 `<input>` 上只喷 Vue 警告、`/proxy/` 前缀永不渲染；
    - 顺带修一处陈旧 E2E：`settings-navigation.spec.ts` 还在等 `[data-test="project-edit"]` 与「编辑项目」弹窗，而项目树重构后入口已是 `project-settings`（跳 `/projects/:id/settings`）——本次改动前该用例就已红（stash 后跑基线证实），现改为断言路由与「常规」分区。
 
+11. **Bot 引擎页增量落地（`BotEngineView.vue` / `BotChannelDialog.vue` / `BotQrLoginDialog.vue` / `BotChannelChatDrawer.vue`）**：严格按 Element Plus v2 与 `settings-page.css` / `entity-editor.css` 契约构建，复用 `EntityFormDialog` / `EngineStepControl` / `ListEmptyState` / `chat` 导出的 `MessageView` + `createChatStream`，零 `Ui*` 原语，渠道表格列宽控制在 866px 预算内，在 `shared/styles/entity-chip.css` 新增分类档位 `.entity-chip--wechat`（`--cat-hue-4`）。
+
 **待办**：
 
 1. 其余模块（任务、终端、工作区）按页面逐个迁移，每页一个 PR，随页更新本节清单（设置模块已随第 10 条全量迁完；其中的 `BuiltinDataPanel` / `AgentUsagePanel` 被引擎页内嵌，更早随引擎中心迁完）；新页面直接按 §四 布局契约与「列表的三态」写（三段式主体 + `.list-page-*` 类名，空态用 `ListEmptyState`，列表带分页），不要再写页头计数芯片、把工具条塞进页头、散装筛选行与自绘空态；**但设置中心的页用 `settings-page.css` 的 `.settings-page-*` / `.settings-panel*`，不要套三段式**（见 §四 的画布例外）。

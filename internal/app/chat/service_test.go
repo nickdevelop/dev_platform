@@ -458,3 +458,66 @@ func TestChatGenerationWithPlatformTools(t *testing.T) {
 		t.Fatalf("expected normal text reply for groupB, got %+v", msgsB)
 	}
 }
+
+func TestCreateSilentSendAndWaitWithToolPolicy(t *testing.T) {
+	step := 0
+	completer := &fakeCompleter{
+		stream: func(ctx context.Context, req CompletionRequest, onDelta func(CompletionDelta) error) error {
+			if step == 0 {
+				step++
+				if len(req.Tools) != 1 || req.Tools[0].Function.Name != "platform_list_projects" {
+					return errors.New("expected policy tool platform_list_projects")
+				}
+				return onDelta(CompletionDelta{
+					ToolCalls: []ToolCall{{ID: "c1", Name: "platform_list_projects", Arguments: `{}`}},
+				})
+			}
+			return onDelta(CompletionDelta{Text: "Bot 同步回复完成"})
+		},
+	}
+	policyTools := &fakeToolExecutor{}
+	var policyChatID uint
+	service, repo, _ := testService(
+		t,
+		completer,
+		WithToolPolicyResolver(func(chatID uint) (ToolPolicy, bool) {
+			if chatID == policyChatID {
+				return ToolPolicy{
+					Executor:          policyTools,
+					MaxSteps:          4,
+					ExtraSystemPrompt: "你是渠道 Bot",
+					ModelID:           1,
+				}, true
+			}
+			return ToolPolicy{}, false
+		}),
+	)
+
+	group, err := service.CreateGroup(CreateGroupInput{Name: "Bot 渠道"})
+	if err != nil {
+		t.Fatalf("CreateGroup: %v", err)
+	}
+	created, err := service.CreateSilent(group.ID, "微信 · 默认", 0, "", "已连接微信")
+	if err != nil {
+		t.Fatalf("CreateSilent: %v", err)
+	}
+	policyChatID = created.ID
+
+	reply, err := service.SendAndWait(context.Background(), created.ID, SendInput{Text: "帮我查状态"})
+	if err != nil {
+		t.Fatalf("SendAndWait: %v", err)
+	}
+	if reply.Text != "Bot 同步回复完成" {
+		t.Fatalf("unexpected reply text: %q", reply.Text)
+	}
+	if len(policyTools.executed) != 1 || policyTools.executed[0] != "platform_list_projects" {
+		t.Fatalf("expected policy tool execution, got %+v", policyTools.executed)
+	}
+	if err := service.AppendNotice(created.ID, "会话已完成通知"); err != nil {
+		t.Fatalf("AppendNotice: %v", err)
+	}
+	msgs, _ := repo.ListMessages(created.ID)
+	if len(msgs) != 4 {
+		t.Fatalf("expected 4 messages (welcome + user + assistant + notice), got %d", len(msgs))
+	}
+}

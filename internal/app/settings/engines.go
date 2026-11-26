@@ -43,18 +43,28 @@ type OrchestratorConfig struct {
 
 // CoreEngineConfig models general ReAct engine runtime parameters.
 type CoreEngineConfig struct {
-	FallbackModel   string `json:"fallbackModel"`
-	EnableDebugLog  bool   `json:"enableDebugLog"`
-	LogRetentionDays int   `json:"logRetentionDays"`
-	SearchEngine    string `json:"searchEngine"` // "none", "tavily", "searxng"
+	FallbackModel    string `json:"fallbackModel"`
+	EnableDebugLog   bool   `json:"enableDebugLog"`
+	LogRetentionDays int    `json:"logRetentionDays"`
+	SearchEngine     string `json:"searchEngine"` // "none", "tavily", "searxng"
 }
 
-// EnginesSetting consolidates configuration for all three AI agent personas and the core.
+// BotConfig models configuration for the channel-facing Bot ReAct engine.
+type BotConfig struct {
+	MaxSteps          int      `json:"maxSteps"`
+	TypingIndicator   bool     `json:"typingIndicator"`
+	AutoNotifySession bool     `json:"autoNotifySession"`
+	MaxReplyLength    int      `json:"maxReplyLength"`
+	EnabledTools      []string `json:"enabledTools"`
+}
+
+// EnginesSetting consolidates configuration for all AI engine personas and the core.
 type EnginesSetting struct {
 	Steward      StewardConfig      `json:"steward"`
 	Coder        BuiltinCoderConfig `json:"coder"`
 	Orchestrator OrchestratorConfig `json:"orchestrator"`
 	Core         CoreEngineConfig   `json:"core"`
+	Bot          BotConfig          `json:"bot"`
 	UpdatedAt    string             `json:"updatedAt,omitempty"`
 }
 
@@ -110,6 +120,24 @@ func DefaultEnginesSetting() EnginesSetting {
 			EnableDebugLog:   true,
 			LogRetentionDays: 7,
 			SearchEngine:     "none",
+		},
+		Bot: BotConfig{
+			MaxSteps:          10,
+			TypingIndicator:   true,
+			AutoNotifySession: true,
+			MaxReplyLength:    2000,
+			EnabledTools: []string{
+				"platform_list_projects",
+				"platform_list_worktrees",
+				"platform_list_agent_backends",
+				"platform_create_session",
+				"platform_list_sessions",
+				"platform_get_session_status",
+				"platform_send_session_message",
+				"platform_interrupt_session",
+				"platform_list_teams",
+				"platform_create_collab_session",
+			},
 		},
 		UpdatedAt: time.Now().UTC().Format(time.RFC3339),
 	}

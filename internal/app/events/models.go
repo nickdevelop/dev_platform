@@ -11,6 +11,7 @@ const (
 	ChannelSessions = "sessions"
 	ChannelChat     = "chat"
 	ChannelTasks    = "tasks"
+	ChannelBot      = "bot"
 	ChannelSystem   = "system"
 )
 

@@ -23,6 +23,7 @@ import (
 	"devplatform/internal/app/agentservices"
 	"devplatform/internal/app/agentusage"
 	"devplatform/internal/app/auth"
+	"devplatform/internal/app/bot"
 	"devplatform/internal/app/chat"
 	"devplatform/internal/app/database"
 	"devplatform/internal/app/events"
@@ -42,9 +43,11 @@ import (
 	"devplatform/internal/app/tasks/flow"
 	"devplatform/internal/app/terminal"
 	"devplatform/internal/core/agents"
+	"devplatform/internal/core/channels"
 	"devplatform/internal/core/platform"
 	"devplatform/internal/providers/agy"
 	"devplatform/internal/providers/builtin"
+	"devplatform/internal/providers/channels/wechat"
 	"devplatform/internal/providers/deepseek"
 	"devplatform/internal/providers/opencode"
 	"devplatform/internal/providers/pi"
@@ -398,7 +401,11 @@ func runServer(args []string) error {
 	defer sessionService.Close()
 	promptRepo := prompts.NewRepository(db)
 	promptService := prompts.NewService(promptRepo)
-	platformTools := platformtools.NewExecutor(projectService, promptService, sessionService)
+	platformTools := platformtools.NewExecutor(projectService, promptService, sessionService).Configure(
+		platformtools.WithWorktreeLister(projectService),
+		platformtools.WithSessionController(sessionService),
+		platformtools.WithModelCatalogLister(agentModels),
+	)
 
 	rolesRepo := roles.NewRepository(db)
 	rolesService := roles.NewService(rolesRepo, promptService)
@@ -433,6 +440,7 @@ func runServer(args []string) error {
 	groupProvider := groups.NewProvider(groupRepo)
 	flowEngine.SetGroupProvider(groupProvider)
 	groupService.SetFlowController(flowEngine)
+	platformTools.Configure(platformtools.WithTeamController(groupService))
 
 	// Reconcile orphaned instances and tasks left in running states from a prior process.
 	reconcileCtx, reconcileCancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -464,6 +472,30 @@ func runServer(args []string) error {
 	chatService.SetEventsManager(eventsMgr)
 	taskService.SetEventsManager(eventsMgr)
 	groupService.SetEventsManager(eventsMgr)
+
+	channelRegistry := channels.NewRegistry()
+	if err := channelRegistry.Register(wechat.New()); err != nil {
+		return fmt.Errorf("register wechat channel adapter: %w", err)
+	}
+	botRepo := bot.NewRepository(db)
+	botService := bot.NewService(
+		botRepo,
+		channelRegistry,
+		secretStore,
+		settingsService,
+		chatService,
+		platformTools,
+		sessionService,
+		eventsMgr,
+	)
+	chatService.SetToolPolicyResolver(botService.PolicyForChat)
+	eventsMgr.RegisterHandler(events.ChannelBot, botService)
+	botService.StartAll()
+	defer func() {
+		closeCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		botService.Close(closeCtx)
+	}()
 
 	// Stop every live agent instance before the database is closed and the
 	// data-directory lock released, so no `opencode serve` server or pi child
@@ -505,6 +537,7 @@ func runServer(args []string) error {
 		Chats:         chatService,
 		Events:        eventsService,
 		Proxy:         proxyService,
+		Bot:           botService,
 		WebDir:        webDir,
 	})
 

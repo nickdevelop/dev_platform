@@ -68,3 +68,8 @@
 .entity-chip--default {
   --chip-hue: var(--cat-hue-6); /* 橄榄 · 系统默认 */
 }
+
+/* Bot 渠道类型：wechat 等各自独立色相。 */
+.entity-chip--wechat {
+  --chip-hue: var(--cat-hue-2); /* 青绿 · 个人微信 */
+}

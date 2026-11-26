@@ -32,6 +32,8 @@ type Repository interface {
 	ListMessages(chatID uint) ([]Message, error)
 	ListRecentMessages(chatID uint, limit int) ([]Message, bool, error)
 	GetMessage(chatID, messageID uint) (Message, error)
+	CreateEmptyChat(chat *Chat, welcome *Message) error
+	AppendMessage(chat *Chat, message *Message) error
 	AppendExchange(chat *Chat, user, assistant *Message) error
 	ReplaceFromMessage(chat *Chat, fromMessageID uint, user, assistant *Message) error
 	Regenerate(chat *Chat, lastUserMessageID uint, assistant *Message) error
@@ -98,6 +100,38 @@ func (r *gormRepository) GetChat(id uint) (Chat, error) {
 		return Chat{}, fmt.Errorf("chat: load chat %d: %w", id, err)
 	}
 	return chatFromRow(row), nil
+}
+
+func (r *gormRepository) CreateEmptyChat(chat *Chat, welcome *Message) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		row := chatToRow(*chat)
+		if err := tx.Create(&row).Error; err != nil {
+			return fmt.Errorf("chat: create empty chat: %w", err)
+		}
+		chat.ID = row.ID
+		chat.CreatedAt = row.CreatedAt
+		chat.UpdatedAt = row.UpdatedAt
+		if welcome != nil {
+			if err := createMessage(tx, welcome, chat.ID); err != nil {
+				return fmt.Errorf("chat: create welcome message: %w", err)
+			}
+		}
+		return nil
+	})
+}
+
+func (r *gormRepository) AppendMessage(chat *Chat, message *Message) error {
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		if err := createMessage(tx, message, chat.ID); err != nil {
+			return fmt.Errorf("chat: append message: %w", err)
+		}
+		now := time.Now().UTC()
+		if err := tx.Model(&database.Chat{}).Where("id = ?", chat.ID).Update("updated_at", now).Error; err != nil {
+			return fmt.Errorf("chat: touch chat %d: %w", chat.ID, err)
+		}
+		chat.UpdatedAt = now
+		return nil
+	})
 }
 
 func (r *gormRepository) CreateChat(chat *Chat, user, assistant *Message) error {

@@ -6719,6 +6719,199 @@ paths:
           description: Role not found.
         '409':
           description: Role in use.
+  /bot/descriptors:
+    get:
+      summary: List supported bot channel descriptors
+      operationId: listBotDescriptors
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Supported channel descriptors.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /bot/tools:
+    get:
+      summary: List configurable bot platform tools
+      operationId: listBotTools
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Bot tool catalog.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /bot/channels:
+    get:
+      summary: List bot channels
+      operationId: listBotChannels
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Configured bot channels.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      summary: Create a bot channel
+      operationId: createBotChannel
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '201':
+          description: Channel created.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+  /bot/channels/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+    get:
+      summary: Get bot channel
+      operationId: getBotChannel
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: Channel details.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Not found.
+    put:
+      summary: Update bot channel
+      operationId: updateBotChannel
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '200':
+          description: Channel updated.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+    delete:
+      summary: Delete bot channel
+      operationId: deleteBotChannel
+      security:
+        - cookieAuth: []
+      parameters:
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '204':
+          description: Deleted.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+  /bot/channels/{id}/start:
+    post:
+      summary: Start bot channel listener
+      operationId: startBotChannel
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '200':
+          description: Channel started.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+  /bot/channels/{id}/stop:
+    post:
+      summary: Stop bot channel listener
+      operationId: stopBotChannel
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '200':
+          description: Channel stopped.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+  /bot/channels/{id}/login/qr:
+    post:
+      summary: Start QR login for a bot channel
+      operationId: startBotChannelQRLogin
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '200':
+          description: QR login started.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+  /bot/channels/{id}/login/cancel:
+    post:
+      summary: Cancel active QR login for a bot channel
+      operationId: cancelBotChannelQRLogin
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '204':
+          description: Cancelled.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+  /bot/channels/{id}/login/status:
+    get:
+      summary: Get active QR login status for a bot channel
+      operationId: getBotChannelQRLoginStatus
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: QR login status.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
 components:
   securitySchemes:

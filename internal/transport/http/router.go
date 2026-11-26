@@ -11,6 +11,7 @@ import (
 	"devplatform/internal/app/agentservices"
 	"devplatform/internal/app/agentusage"
 	"devplatform/internal/app/auth"
+	"devplatform/internal/app/bot"
 	"devplatform/internal/app/chat"
 	"devplatform/internal/app/events"
 	"devplatform/internal/app/groups"
@@ -117,6 +118,8 @@ type Dependencies struct {
 	// their sessions in the platform database (the embedded agent). The
 	// settings center lists and deletes those sessions through it.
 	AgentData *agentdata.Service
+	// Bot manages external IM bot channels and channel-bound conversations.
+	Bot *bot.Service
 	// WebDir is the directory holding the built web UI assets (the Vite
 	// build output, typically web/dist). When non-empty, the engine serves
 	// the single-page app from it so the UI and the API share one origin in
@@ -221,6 +224,9 @@ func NewRouter(deps Dependencies) *gin.Engine {
 		}
 		if deps.Events != nil {
 			deps.Events.RegisterRoutes(authenticated)
+		}
+		if deps.Bot != nil {
+			deps.Bot.RegisterRoutes(protected)
 		}
 	}
 

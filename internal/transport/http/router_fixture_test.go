@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -18,11 +19,13 @@ import (
 	"devplatform/internal/app/agentservices"
 	"devplatform/internal/app/agentusage"
 	"devplatform/internal/app/auth"
+	"devplatform/internal/app/bot"
 	"devplatform/internal/app/chat"
 	"devplatform/internal/app/events"
 	"devplatform/internal/app/groups"
 	"devplatform/internal/app/instances"
 	"devplatform/internal/app/modelconfig"
+	"devplatform/internal/app/platformtools"
 	"devplatform/internal/app/projects"
 	"devplatform/internal/app/prompts"
 	"devplatform/internal/app/proxy"
@@ -32,6 +35,7 @@ import (
 	"devplatform/internal/app/tasks"
 	"devplatform/internal/app/terminal"
 	"devplatform/internal/core/agents"
+	"devplatform/internal/core/channels"
 	"devplatform/internal/core/platform/fake"
 )
 
@@ -81,6 +85,22 @@ func newFullDependencies(t *testing.T) Dependencies {
 	groupSvc := groups.NewService(groupRepo)
 	groupSvc.SetEventsManager(eventsMgr)
 	agentDataSvc := agentdata.NewService(db)
+	toolsExec := platformtools.NewExecutor(projSvc, promptSvc, sessionSvc)
+	botSvc := bot.NewService(
+		bot.NewRepository(db),
+		channels.NewRegistry(),
+		nil,
+		settingsSvc,
+		chatSvc,
+		toolsExec,
+		sessionSvc,
+		eventsMgr,
+	)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		botSvc.Close(ctx)
+	})
 
 	deps := Dependencies{
 		Auth:          authSvc,
@@ -101,6 +121,7 @@ func newFullDependencies(t *testing.T) Dependencies {
 		Events:        eventsSvc,
 		Proxy:         proxy.NewService(proxy.NewRepository(db)),
 		AgentData:     agentDataSvc,
+		Bot:           botSvc,
 	}
 
 	val := reflect.ValueOf(deps)
