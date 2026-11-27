@@ -21,6 +21,8 @@ import { useProjectsStore } from '../stores/projects'
 import { useSessionsStore } from '../stores/sessions'
 import { useSettingsStore } from '../stores/settings'
 import { useProjectTerminalStore } from '../stores/projectTerminal'
+import { useDraftsStore } from '../stores/drafts'
+import { useWorkspaceDockStore } from '../stores/workspaceDock'
 import type { Capabilities } from '../api/sessions'
 
 function capabilities(): Capabilities {
@@ -567,6 +569,106 @@ describe('three-pane app shell', () => {
     await router.push('/')
     await flushPromises()
     expect(wrapper.find('[data-test="rail-edge-toggle"]').attributes('title')).toBe('展开侧边栏')
+  })
+
+  it('collapses the project sidebar instead of switching project when clicking active 项目 rail item in new-session view', async () => {
+    const { wrapper, router, pinia } = await setup('/projects/1/sessions/sess-1', {
+      SessionChatPanel: true,
+    }, () => {
+      const projects = useProjectsStore()
+      projects.projects = [
+        { id: 1, name: 'alpha', path: '/workspace/alpha' } as never,
+        { id: 2, name: 'beta', path: '/workspace/beta' } as never,
+      ]
+      const agents = useAgentsStore()
+      agents.backends = [{ backend: 'pi', capabilities: capabilities(), label: 'Pi Agent', order: 2, serviceSupported: false }]
+      vi.spyOn(agents, 'loadBackends').mockResolvedValue(undefined)
+      vi.spyOn(agents, 'loadInstances').mockResolvedValue(undefined)
+      useDraftsStore().setNewSessionDraft({ projectId: 1, messageText: 'old draft' }, 1)
+    })
+
+    // 1. Close all tabs -> lands on EmptyWorkspace
+    await wrapper.find('[data-test="close-tab"]').trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.name).toBe('home')
+
+    // 2. Click "新建 Agent 会话" -> enters new-session form and picks project 2
+    const newSessionBtn = wrapper.findAll('button.action-btn').find((b) => b.text().includes('新建 Agent 会话'))
+    expect(newSessionBtn).toBeDefined()
+    await newSessionBtn!.trigger('click')
+    await flushPromises()
+    expect(wrapper.findComponent(NewSessionPanel).exists()).toBe(true)
+
+    const select = wrapper.find<HTMLSelectElement>('[data-test="project-select"]')
+    await select.setValue('2')
+    await flushPromises()
+    expect(router.currentRoute.value.name).toBe('session-new')
+    expect(router.currentRoute.value.params.projectId).toBe('2')
+    expect(useDraftsStore(pinia).newSessionDraft.projectId).toBe(2)
+
+    // 3. Sidebar is visible; clicking active top-level "项目" rail item collapses it without changing project
+    expect(wrapper.find('aside.sidebar').exists()).toBe(true)
+    await wrapper.findAll('a').find((link) => link.text() === '项目')!.trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('aside.sidebar').exists()).toBe(false)
+    expect(router.currentRoute.value.name).toBe('session-new')
+    expect(router.currentRoute.value.params.projectId).toBe('2')
+    expect((wrapper.find('[data-test="project-select"]').element as HTMLSelectElement).value).toBe('2')
+
+    // 4. Clicking "项目" again pops the sidebar back out floating, still keeping project 2
+    await wrapper.findAll('a').find((link) => link.text() === '项目')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.find('aside.sidebar').classes()).toContain('sidebar-floating')
+    expect(router.currentRoute.value.params.projectId).toBe('2')
+  })
+
+  it('binds Ctrl+P quick search in WorkspaceDockPanel to the file tree scope (respecting lock) rather than active session', async () => {
+    const { wrapper, pinia } = await setup('/projects/1/sessions/sess-1', {
+      SessionChatPanel: true,
+      FileSidebar: true,
+      FileViewer: true,
+      QuickFileSearchDialog: true,
+    }, () => {
+      const projects = useProjectsStore()
+      projects.projects = [
+        { id: 1, name: 'alpha', path: '/workspace/alpha' } as never,
+        { id: 2, name: 'beta', path: '/workspace/beta' } as never,
+      ]
+    })
+
+    const dockStore = useWorkspaceDockStore(pinia)
+    // Session 1 (project 1) is active, lock the file tree to project 1
+    expect(dockStore.effectiveScope?.projectId).toBe(1)
+    dockStore.toggleLock()
+    expect(dockStore.isLocked).toBe(true)
+
+    // Switch active session scope to project 2 / worktree 5 (file tree stays locked on project 1 / worktree 0)
+    dockStore.setSessionScope(2, 5, 'sess-2')
+    await flushPromises()
+    expect(dockStore.effectiveScope?.projectId).toBe(1)
+    expect(dockStore.effectiveScope?.worktreeId).toBe(0)
+
+    // Press Ctrl+P: QuickFileSearchDialog opens with file tree's projectId=1, worktreeId=0
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'p', ctrlKey: true }))
+    await flushPromises()
+
+    const dialog = wrapper.findComponent({ name: 'QuickFileSearchDialog' })
+    expect(dialog.exists()).toBe(true)
+    expect(dialog.props('open')).toBe(true)
+    expect(dialog.props('projectId')).toBe(1)
+    expect(dialog.props('worktreeId')).toBe(0)
+
+    // Selecting a file opens it in the locked file tree's scope (projectId=1, worktreeId=0)
+    await dialog.vm.$emit('select', 'src/locked.ts', 12)
+    await flushPromises()
+    expect(dockStore.quickSearchOpen).toBe(false)
+    expect(dockStore.currentTab).toMatchObject({
+      projectId: 1,
+      worktreeId: 0,
+      path: 'src/locked.ts',
+      initialLine: 12,
+    })
   })
 })
 

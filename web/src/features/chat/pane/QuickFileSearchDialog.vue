@@ -286,6 +286,15 @@ watch(
   { immediate: true },
 )
 
+watch(
+  [() => props.projectId, () => props.worktreeId],
+  () => {
+    if (!props.open) return
+    activeIndex.value = 0
+    void doSearch(query.value.trim())
+  },
+)
+
 watch(query, (newQ) => {
   if (debounceTimer) clearTimeout(debounceTimer)
   debounceTimer = setTimeout(() => {

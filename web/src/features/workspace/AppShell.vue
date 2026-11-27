@@ -173,9 +173,15 @@ function toggleSidebar() {
 
 let railNavigationTimestamp = 0
 
-// When clicking first-column rail items: if sidebar is collapsed or unpinned, pop it out floating.
-function onRailMenuClick() {
+// When clicking first-column rail items: if clicking an already-active category
+// while its sidebar is visible, collapse it; otherwise pop it out floating if
+// collapsed or unpinned.
+function onRailMenuClick(alreadyActive = false) {
   railNavigationTimestamp = Date.now()
+  if (alreadyActive && isSidebarVisible.value) {
+    collapseSidebar()
+    return
+  }
   if (!isDocked.value) {
     floatingOpen.value = true
   }
@@ -648,6 +654,7 @@ function onCreated(sessionId: string, targetProjectId?: number) {
 
 function openNewSession(id: number) {
   const draft = drafts.getNewSessionDraft(id)
+  drafts.setActiveNewSessionProject(id)
   workspaceDock.setSessionScope(id, draft.worktreeId ?? 0)
   void router.push({ name: 'session-new', params: { projectId: String(id) } })
 }

@@ -18,10 +18,10 @@ import { useDraftsStore } from '../../stores/drafts'
 
 const emit = defineEmits<{
   logout: []
-  // A rail entry that needs the project/task column asks the shell to show it,
-  // so a collapsed column comes back in one click even when the entry is the
-  // one already active (no route change to react to).
-  expandSidebar: []
+  // A rail entry asks the shell to show the middle column when switching
+  // categories or expanding from collapsed state, and to collapse it when
+  // clicking the already-active category while its column is visible.
+  expandSidebar: [alreadyActive?: boolean]
 }>()
 
 const route = useRoute()
@@ -75,120 +75,118 @@ const projectDestination = computed(() => {
   return { name: 'home' }
 })
 
-function onProjectClick(event: MouseEvent) {
-  emit('expandSidebar')
-  if (projectActive.value) {
-    event.preventDefault()
+function onCategoryClick(
+  isActive: boolean,
+  navigate: (e?: MouseEvent) => Promise<unknown>,
+  event: MouseEvent,
+) {
+  if (event.metaKey || event.altKey || event.ctrlKey || event.shiftKey) {
+    return
   }
-}
-
-function onOrgClick(event: MouseEvent) {
-  emit('expandSidebar')
-  if (orgActive.value) {
+  if (isActive) {
     event.preventDefault()
+    emit('expandSidebar', true)
+    return
   }
-}
-
-function onTasksClick(event: MouseEvent) {
-  emit('expandSidebar')
-  if (tasksActive.value) {
-    event.preventDefault()
-  }
-}
-
-function onEnginesClick() {
-  emit('expandSidebar')
-}
-
-function onSettingsClick() {
-  emit('expandSidebar')
+  emit('expandSidebar', false)
+  void navigate(event)
 }
 </script>
 
 <template>
   <nav class="category-rail" aria-label="大类">
     <div class="rail-top">
-      <RouterLink
-        class="category"
-        :class="{ active: projectActive }"
-        title="项目"
-        :aria-current="projectActive ? 'page' : undefined"
-        :to="projectDestination"
-        @click="onProjectClick"
-      >
-        <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-        </svg>
-        <span>项目</span>
+      <RouterLink v-slot="{ href, navigate }" custom :to="projectDestination">
+        <a
+          class="category"
+          :class="{ active: projectActive }"
+          title="项目"
+          :aria-current="projectActive ? 'page' : undefined"
+          :href="href"
+          @click="onCategoryClick(projectActive, navigate, $event)"
+        >
+          <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+          </svg>
+          <span>项目</span>
+        </a>
       </RouterLink>
-      <RouterLink
-        class="category"
-        :class="{ active: orgActive }"
-        title="组织"
-        :aria-current="orgActive ? 'page' : undefined"
-        :to="{ name: 'org-prompts' }"
-        @click="onOrgClick"
-      >
-        <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="9" y="3" width="6" height="4" rx="1" />
-          <path d="M12 7v4" />
-          <path d="M5 11h14" />
-          <path d="M5 11v3" />
-          <path d="M19 11v3" />
-          <rect x="2" y="14" width="6" height="4" rx="1" />
-          <rect x="16" y="14" width="6" height="4" rx="1" />
-          <path d="M12 11v3" />
-          <rect x="9" y="14" width="6" height="4" rx="1" />
-        </svg>
-        <span>组织</span>
+      <RouterLink v-slot="{ href, navigate }" custom :to="{ name: 'org-prompts' }">
+        <a
+          class="category"
+          :class="{ active: orgActive }"
+          title="组织"
+          :aria-current="orgActive ? 'page' : undefined"
+          :href="href"
+          @click="onCategoryClick(orgActive, navigate, $event)"
+        >
+          <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="3" width="6" height="4" rx="1" />
+            <path d="M12 7v4" />
+            <path d="M5 11h14" />
+            <path d="M5 11v3" />
+            <path d="M19 11v3" />
+            <rect x="2" y="14" width="6" height="4" rx="1" />
+            <rect x="16" y="14" width="6" height="4" rx="1" />
+            <path d="M12 11v3" />
+            <rect x="9" y="14" width="6" height="4" rx="1" />
+          </svg>
+          <span>组织</span>
+        </a>
       </RouterLink>
-      <RouterLink
-        class="category"
-        :class="{ active: tasksActive }"
-        title="任务管理"
-        :aria-current="tasksActive ? 'page' : undefined"
-        :to="{ name: 'tasks' }"
-        @click="onTasksClick"
-      >
-        <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <path d="M9 11l3 3L22 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-        <span>任务</span>
+      <RouterLink v-slot="{ href, navigate }" custom :to="{ name: 'tasks' }">
+        <a
+          class="category"
+          :class="{ active: tasksActive }"
+          title="任务管理"
+          :aria-current="tasksActive ? 'page' : undefined"
+          :href="href"
+          @click="onCategoryClick(tasksActive, navigate, $event)"
+        >
+          <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M9 11l3 3L22 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span>任务</span>
+        </a>
       </RouterLink>
     </div>
 
     <div class="rail-bottom">
       <div class="rail-divider" aria-hidden="true"></div>
-      <RouterLink
-        class="footer-btn engines"
-        title="引擎"
-        :aria-current="enginesActive ? 'page' : undefined"
-        :to="{ name: 'engines-assistant' }"
-        @click="onEnginesClick"
-      >
-        <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z" />
-          <path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z" />
-          <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0" />
-          <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5" />
-        </svg>
-        <span>引擎</span>
+      <RouterLink v-slot="{ href, navigate }" custom :to="{ name: 'engines-assistant' }">
+        <a
+          class="footer-btn engines"
+          title="引擎"
+          :aria-current="enginesActive ? 'page' : undefined"
+          :href="href"
+          @click="onCategoryClick(enginesActive, navigate, $event)"
+        >
+          <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z" />
+            <path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z" />
+            <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0" />
+            <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5" />
+          </svg>
+          <span>引擎</span>
+        </a>
       </RouterLink>
-      <RouterLink
-        class="footer-btn settings"
-        title="设置"
-        :aria-current="settingsActive ? 'page' : undefined"
-        :to="{ name: 'settings-appearance' }"
-        @click="onSettingsClick"
-      >
-        <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-          <circle cx="12" cy="12" r="3" />
-          <path
-            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1.08 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
-          />
-        </svg>
-        <span>设置</span>
+      <RouterLink v-slot="{ href, navigate }" custom :to="{ name: 'settings-appearance' }">
+        <a
+          class="footer-btn settings"
+          title="设置"
+          :aria-current="settingsActive ? 'page' : undefined"
+          :href="href"
+          @click="onCategoryClick(settingsActive, navigate, $event)"
+        >
+          <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <circle cx="12" cy="12" r="3" />
+            <path
+              d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1.08 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
+            />
+          </svg>
+          <span>设置</span>
+        </a>
       </RouterLink>
       <button type="button" class="footer-btn logout" title="退出登录" @click="emit('logout')">
         <svg class="rail-icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">

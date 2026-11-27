@@ -167,6 +167,7 @@ export const useDraftsStore = defineStore('drafts', {
         if (state.newSessionDrafts[activeKey]) {
           return normalizeNewSessionDraft(state.newSessionDrafts[activeKey])
         }
+        return defaultNewSessionDraft(state.lastNewSessionProjectId)
       }
       if (state.newSessionDrafts['global']) {
         return normalizeNewSessionDraft(state.newSessionDrafts['global'])
@@ -212,6 +213,15 @@ export const useDraftsStore = defineStore('drafts', {
         this.lastNewSessionProjectId = targetProjectId
       }
 
+      persistJson(NEW_SESSION_STORAGE_KEY, {
+        drafts: this.newSessionDrafts,
+        lastProjectId: this.lastNewSessionProjectId,
+      })
+    },
+
+    setActiveNewSessionProject(projectId: number | null) {
+      if (this.lastNewSessionProjectId === projectId) return
+      this.lastNewSessionProjectId = projectId
       persistJson(NEW_SESSION_STORAGE_KEY, {
         drafts: this.newSessionDrafts,
         lastProjectId: this.lastNewSessionProjectId,

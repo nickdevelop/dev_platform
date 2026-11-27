@@ -143,6 +143,7 @@ watch(
   [selectedProjectId, selectedWorktreeId],
   ([pId, wtId]) => {
     if (pId !== null) {
+      draftsStore.setActiveNewSessionProject(Number(pId))
       workspaceDock.setSessionScope(Number(pId), wtId ?? 0)
     }
   },
@@ -151,6 +152,7 @@ watch(
 
 onActivated(() => {
   if (selectedProjectId.value !== null) {
+    draftsStore.setActiveNewSessionProject(Number(selectedProjectId.value))
     workspaceDock.setSessionScope(Number(selectedProjectId.value), selectedWorktreeId.value ?? 0)
   }
 })
@@ -285,12 +287,36 @@ const {
 // uses; a picked result lands in the preview pane on the right. The panel is
 // kept alive across routes, so the shortcut must follow the active route.
 const quickFileSearchOpen = ref(false)
+const quickSearchScope = computed(() => {
+  if (workspaceDock.effectiveScope) return workspaceDock.effectiveScope
+  if (selectedProjectId.value === null) return null
+  return {
+    projectId: Number(selectedProjectId.value),
+    worktreeId: selectedWorktreeId.value,
+  }
+})
+
+function onQuickSearchSelect(path: string, line?: number) {
+  quickFileSearchOpen.value = false
+  const scope = quickSearchScope.value
+  if (!scope) return
+  if (scope.projectId === Number(selectedProjectId.value) && scope.worktreeId === selectedWorktreeId.value) {
+    openFileInPreview(path, { initialLine: line })
+    return
+  }
+  workspaceDock.openFile({
+    projectId: scope.projectId,
+    worktreeId: scope.worktreeId,
+    path,
+    initialLine: line,
+  })
+}
 
 function onQuickSearchKeydown(e: KeyboardEvent) {
-  if (!isNewSessionRouteActive()) return
+  if (props.hideSideRail || !isNewSessionRouteActive()) return
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') {
     e.preventDefault()
-    if (selectedProjectId.value === null) {
+    if (!quickSearchScope.value) {
       toolNotice.value = '请先选择关联的项目'
       return
     }
@@ -519,6 +545,7 @@ watch(selectedProjectId, (newId, oldId) => {
   }
 
   if (newId) {
+    draftsStore.setActiveNewSessionProject(Number(newId))
     isRestoringDraft = true
     const targetDraft = draftsStore.getNewSessionDraft(newId)
     messageText.value = targetDraft.messageText || ''
@@ -1227,12 +1254,12 @@ async function createSession() {
     />
 
     <QuickFileSearchDialog
-      v-if="!props.hideSideRail && selectedProjectId !== null"
+      v-if="!props.hideSideRail && quickSearchScope !== null"
       :open="quickFileSearchOpen"
-      :project-id="Number(selectedProjectId)"
-      :worktree-id="selectedWorktreeId"
+      :project-id="quickSearchScope.projectId"
+      :worktree-id="quickSearchScope.worktreeId"
       @close="quickFileSearchOpen = false"
-      @select="(path, line) => { quickFileSearchOpen = false; openFileInPreview(path, { initialLine: line }) }"
+      @select="onQuickSearchSelect"
     />
   </div>
 </template>

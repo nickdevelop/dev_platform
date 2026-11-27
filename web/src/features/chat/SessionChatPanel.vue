@@ -748,11 +748,32 @@ const composerDisabled = computed(() => {
 // the panel renders whatever that layer reports.
 
 const quickFileSearchOpen = ref(false)
+const quickSearchScope = computed(() =>
+  workspaceDock.effectiveScope ?? {
+    projectId: props.projectId,
+    worktreeId: activeWorktreeId.value,
+  },
+)
+
+function onQuickSearchSelect(path: string, line?: number) {
+  quickFileSearchOpen.value = false
+  const scope = quickSearchScope.value
+  if (scope.projectId === props.projectId && scope.worktreeId === activeWorktreeId.value) {
+    openFileInPreview(path, { initialLine: line })
+    return
+  }
+  workspaceDock.openFile({
+    projectId: scope.projectId,
+    worktreeId: scope.worktreeId,
+    path,
+    initialLine: line,
+  })
+}
 
 function onSessionKeydown(e: KeyboardEvent) {
-  if (isDeactivated) return
+  if (isDeactivated || props.hideSideRail) return
 
-  // Ctrl+P / Cmd+P: Quick open file search
+  // Ctrl+P / Cmd+P: Quick open file search (standalone mode when dock is local)
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') {
     e.preventDefault()
     quickFileSearchOpen.value = !quickFileSearchOpen.value
@@ -1444,11 +1465,12 @@ async function removeSession() {
     />
 
     <QuickFileSearchDialog
+      v-if="!props.hideSideRail"
       :open="quickFileSearchOpen"
-      :project-id="props.projectId"
-      :worktree-id="activeWorktreeId"
+      :project-id="quickSearchScope.projectId"
+      :worktree-id="quickSearchScope.worktreeId"
       @close="quickFileSearchOpen = false"
-      @select="(path, line) => { quickFileSearchOpen = false; openFileInPreview(path, { initialLine: line }) }"
+      @select="onQuickSearchSelect"
     />
   </section>
 </template>

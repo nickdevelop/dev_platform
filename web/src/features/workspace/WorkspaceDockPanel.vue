@@ -6,6 +6,7 @@ import { useProjectsStore } from '../../stores/projects'
 import { useWorktreesStore } from '../../stores/worktrees'
 import { FileSidebar, FileViewer } from '../files'
 import type { CodeCommentCard } from '../files/types'
+import QuickFileSearchDialog from '../chat/pane/QuickFileSearchDialog.vue'
 
 const emit = defineEmits<{
   'add-comment': [card: CodeCommentCard]
@@ -94,8 +95,15 @@ function onResizerMouseDown(e: MouseEvent) {
   window.addEventListener('mouseup', onMouseUp)
 }
 
-// Alt+W shortcut to close active tab
+// Ctrl+P / Cmd+P toggles quick search for the file tree's active/locked directory;
+// Alt+W closes the active preview file tab when expanded.
 function onKeydown(e: KeyboardEvent) {
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'p') {
+    if (!effectiveScope.value) return
+    e.preventDefault()
+    dockStore.quickSearchOpen = !dockStore.quickSearchOpen
+    return
+  }
   if (dockStore.previewCollapsed) return
   if (!e.altKey || e.ctrlKey || e.metaKey || e.key.toLowerCase() !== 'w') return
   if (dockStore.activeTabKey === FILE_TREE_TAB_KEY) return
@@ -110,9 +118,21 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
+  dockStore.closeQuickSearch()
 })
 
 const effectiveScope = computed(() => dockStore.effectiveScope)
+
+function onQuickSearchSelect(path: string, line?: number) {
+  dockStore.closeQuickSearch()
+  if (!effectiveScope.value) return
+  dockStore.openFile({
+    projectId: effectiveScope.value.projectId,
+    worktreeId: effectiveScope.value.worktreeId,
+    path,
+    initialLine: line,
+  })
+}
 const currentDirectory = computed(() => {
   if (!effectiveScope.value) return ''
   const proj = projectsStore.byId(effectiveScope.value.projectId)
@@ -313,6 +333,15 @@ const currentDirectory = computed(() => {
       </div>
     </div>
   </aside>
+
+  <QuickFileSearchDialog
+    v-if="effectiveScope"
+    :open="dockStore.quickSearchOpen"
+    :project-id="effectiveScope.projectId"
+    :worktree-id="effectiveScope.worktreeId"
+    @close="dockStore.closeQuickSearch()"
+    @select="onQuickSearchSelect"
+  />
 </template>
 
 <style scoped>

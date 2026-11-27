@@ -379,4 +379,15 @@ describe('QuickFileSearchDialog', () => {
     expect(input.element.value).toBe('')
     expect(wrapper.find('[data-test="quick-search-clear-btn"]').exists()).toBe(false)
   })
+
+  it('refreshes results when projectId or worktreeId changes while open', async () => {
+    const searchSpy = vi.spyOn(projectsApi, 'searchProjectFiles').mockResolvedValue({ files: [] })
+    const wrapper = mountDialog({ open: true, projectId: 1, worktreeId: 0 })
+    await flushPromises()
+    expect(searchSpy).toHaveBeenLastCalledWith(1, '', 50, 0)
+
+    await wrapper.setProps({ projectId: 2, worktreeId: 7 })
+    await flushPromises()
+    expect(searchSpy).toHaveBeenLastCalledWith(2, '', 50, 7)
+  })
 })

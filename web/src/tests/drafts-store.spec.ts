@@ -155,5 +155,16 @@ describe('useDraftsStore', () => {
       expect(store.getNewSessionDraft(1).messageText).toBe('')
       expect(store.getNewSessionDraft(2).messageText).toBe('Draft for Project 2')
     })
+
+    it('tracks active new-session project without falling back to another project draft', () => {
+      const store = useDraftsStore()
+      store.setNewSessionDraft({ messageText: 'Draft for Project 1' }, 1)
+      expect(store.newSessionDraft.projectId).toBe(1)
+
+      // Switching active new-session project to 2 (with no saved draft yet) must report project 2
+      store.setActiveNewSessionProject(2)
+      expect(store.newSessionDraft.projectId).toBe(2)
+      expect(store.newSessionDraft.messageText).toBe('')
+    })
   })
 })
