@@ -28,6 +28,7 @@ import ProjectsManagementDialog from '../projects/ProjectsManagementDialog.vue'
 import ProjectSettingsDialog from '../projects/ProjectSettingsDialog.vue'
 import ProjectSidebar from '../projects/ProjectSidebar.vue'
 import WorkspaceDockPanel from './WorkspaceDockPanel.vue'
+import WorkspaceFileTreePanel from './WorkspaceFileTreePanel.vue'
 import { useWorkspaceDockStore } from '../../stores/workspaceDock'
 import SessionTabs from './SessionTabs.vue'
 import TasksSidebar from '../tasks/TasksSidebar.vue'
@@ -92,6 +93,85 @@ const targetProjectSettingsId = ref<number | null>(null)
 // Pinned status defaults to true; collapsed status defaults to false.
 const SIDEBAR_STORAGE_KEY = 'dev-platform-sidebar-v1'
 const SIDEBAR_PINNED_STORAGE_KEY = 'dev-platform-sidebar-pinned'
+const SIDEBAR_WIDTH_STORAGE_KEY = 'dev-platform-sidebar-width-v1'
+const DEFAULT_SIDEBAR_WIDTH = 272
+const MIN_SIDEBAR_WIDTH = 200
+const MAX_SIDEBAR_WIDTH = 480
+
+const sidebarWidth = ref(DEFAULT_SIDEBAR_WIDTH)
+try {
+  const savedWidth = parseInt(localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY) || '', 10)
+  if (!isNaN(savedWidth)) {
+    sidebarWidth.value = Math.min(MAX_SIDEBAR_WIDTH, Math.max(MIN_SIDEBAR_WIDTH, savedWidth))
+  }
+} catch {
+  sidebarWidth.value = DEFAULT_SIDEBAR_WIDTH
+}
+
+const isSidebarResizing = ref(false)
+let sidebarDragStartX = 0
+let sidebarDragStartWidth = DEFAULT_SIDEBAR_WIDTH
+
+function persistSidebarWidth(width: number) {
+  try {
+    localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, String(width))
+  } catch {
+    // Persistence is best-effort only.
+  }
+}
+
+function onSidebarResizerMouseDown(e: MouseEvent) {
+  if (e.button !== 0) return
+  e.preventDefault()
+  isSidebarResizing.value = true
+  sidebarDragStartX = e.clientX
+  sidebarDragStartWidth = sidebarWidth.value
+  document.body.style.cursor = 'col-resize'
+  document.body.style.userSelect = 'none'
+
+  const onMouseMove = (ev: MouseEvent) => {
+    if (!isSidebarResizing.value) return
+    const delta = ev.clientX - sidebarDragStartX
+    const rightUsed = projectActive.value ? rightDockWidth.value : 0
+    const maxAllowed = Math.max(
+      MIN_SIDEBAR_WIDTH,
+      Math.min(MAX_SIDEBAR_WIDTH, window.innerWidth - 48 - rightUsed - 320),
+    )
+    sidebarWidth.value = Math.round(
+      Math.min(maxAllowed, Math.max(MIN_SIDEBAR_WIDTH, sidebarDragStartWidth + delta)),
+    )
+  }
+
+  const onMouseUp = () => {
+    if (!isSidebarResizing.value) return
+    isSidebarResizing.value = false
+    document.body.style.cursor = ''
+    document.body.style.userSelect = ''
+    window.removeEventListener('mousemove', onMouseMove)
+    window.removeEventListener('mouseup', onMouseUp)
+    persistSidebarWidth(sidebarWidth.value)
+  }
+
+  window.addEventListener('mousemove', onMouseMove)
+  window.addEventListener('mouseup', onMouseUp)
+}
+
+function resetSidebarWidth() {
+  sidebarWidth.value = DEFAULT_SIDEBAR_WIDTH
+  persistSidebarWidth(DEFAULT_SIDEBAR_WIDTH)
+}
+
+const rightDockWidth = computed(() => {
+  if (!workspaceDock.previewCollapsed) return workspaceDock.previewWidth
+  if (workspaceDock.fileTreeVisible) return workspaceDock.fileTreeWidth
+  return 0
+})
+
+const rightDockStyle = computed(() =>
+  rightDockWidth.value > 0
+    ? { width: `${rightDockWidth.value}px`, flex: `0 0 ${rightDockWidth.value}px` }
+    : undefined,
+)
 
 const sidebarCollapsed = ref(false)
 try {
@@ -323,6 +403,20 @@ function onAppShellKeydown(e: KeyboardEvent) {
     e.preventDefault()
     e.stopPropagation()
     projectTerminal.toggleShortcut()
+    return
+  }
+
+  // Ctrl+\ / Cmd+\: Toggle independent file tree panel in workspace mode
+  if (
+    (e.ctrlKey || e.metaKey) &&
+    !e.altKey &&
+    !e.shiftKey &&
+    (e.code === 'Backslash' || e.key === '\\')
+  ) {
+    if (!projectActive.value) return
+    e.preventDefault()
+    e.stopPropagation()
+    workspaceDock.toggleFileTree()
     return
   }
 }
@@ -715,7 +809,9 @@ watch(
       'tasks-mode': tasksMode,
       'org-mode': orgMode,
       'sidebar-collapsed': !isDocked,
+      'is-sidebar-resizing': isSidebarResizing,
     }"
+    :style="isDocked ? { gridTemplateColumns: `48px ${sidebarWidth}px minmax(0, 1fr)` } : undefined"
   >
     <!-- Floating sidebar backdrop for click-outside to collapse -->
     <div
@@ -754,7 +850,9 @@ watch(
       :class="{
         'sidebar-floating': isFloating,
         'sidebar-docked': isDocked,
+        'is-resizing': isSidebarResizing,
       }"
+      :style="isFloating ? { width: `${sidebarWidth}px` } : undefined"
       :aria-label="columnLabel"
     >
       <div class="sidebar-head">
@@ -808,6 +906,16 @@ watch(
         @new-session="openNewSession"
         @delete-session="onDeleteSession"
       />
+
+      <div
+        class="sidebar-resizer"
+        data-test="sidebar-resizer"
+        title="拖拽调整菜单栏宽度（双击恢复默认）"
+        @mousedown="onSidebarResizerMouseDown"
+        @dblclick="resetSidebarWidth"
+      >
+        <span class="sidebar-resizer-line"></span>
+      </div>
     </aside>
 
     <section class="pane" :class="{ 'pane-full': fullHeightPane }">
@@ -848,9 +956,17 @@ watch(
           </div>
         </div>
 
-        <WorkspaceDockPanel
-          @add-comment="onAddCodeCommentFromDock"
-        />
+        <div
+          v-if="!workspaceDock.previewCollapsed || workspaceDock.fileTreeVisible"
+          class="workbench-right-dock"
+          :style="rightDockStyle"
+          data-test="workbench-right-dock"
+        >
+          <WorkspaceDockPanel
+            @add-comment="onAddCodeCommentFromDock"
+          />
+          <WorkspaceFileTreePanel />
+        </div>
       </div>
 
       <template v-else>
@@ -1012,6 +1128,39 @@ watch(
   z-index: 40;
   box-shadow: 4px 0 20px rgba(0, 0, 0, 0.18);
   animation: sidebar-slide-in 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.sidebar-resizer {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  cursor: col-resize;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease-out;
+}
+
+.sidebar-resizer:hover,
+.sidebar.is-resizing .sidebar-resizer {
+  background: var(--color-primary-soft);
+}
+
+.sidebar-resizer-line {
+  width: 2px;
+  height: 24px;
+  border-radius: 1px;
+  background: var(--color-border-strong);
+  opacity: 0;
+  transition: opacity 0.15s ease-out;
+}
+
+.sidebar-resizer:hover .sidebar-resizer-line,
+.sidebar.is-resizing .sidebar-resizer-line {
+  opacity: 1;
 }
 
 @keyframes sidebar-slide-in {
@@ -1206,6 +1355,15 @@ watch(
   min-width: 320px;
   display: flex;
   flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.workbench-right-dock {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
   min-height: 0;
   height: 100%;
   overflow: hidden;

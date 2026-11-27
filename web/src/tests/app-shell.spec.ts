@@ -726,4 +726,104 @@ describe('quick assistant launcher visibility', () => {
     await wrapper.vm.$nextTick()
     expect(termStore.isMinimized).toBe(false)
   })
+
+  it('resizes secondary sidebar by dragging resizer, persists width, and resets on dblclick', async () => {
+    const prevWidth = window.innerWidth
+    Object.defineProperty(window, 'innerWidth', { value: 1440, configurable: true })
+    try {
+      const { wrapper } = await setup('/')
+      const resizer = wrapper.find('[data-test="sidebar-resizer"]')
+      expect(resizer.exists()).toBe(true)
+
+      const shell = wrapper.find('.app-shell')
+      expect(shell.attributes('style')).toContain('48px 272px minmax(0, 1fr)')
+
+      await resizer.trigger('mousedown', { button: 0, clientX: 320 })
+      window.dispatchEvent(new MouseEvent('mousemove', { clientX: 400 }))
+      window.dispatchEvent(new MouseEvent('mouseup'))
+      await wrapper.vm.$nextTick()
+
+      expect(shell.attributes('style')).toContain('48px 352px minmax(0, 1fr)')
+      expect(localStorage.getItem('dev-platform-sidebar-width-v1')).toBe('352')
+
+      await resizer.trigger('dblclick')
+      await wrapper.vm.$nextTick()
+      expect(shell.attributes('style')).toContain('48px 272px minmax(0, 1fr)')
+      expect(localStorage.getItem('dev-platform-sidebar-width-v1')).toBe('272')
+    } finally {
+      Object.defineProperty(window, 'innerWidth', { value: prevWidth, configurable: true })
+    }
+  })
+
+  it('hides independent file tree panel by default, toggles with Ctrl+\\, and closes active file tab with Ctrl+W', async () => {
+    const { wrapper, pinia } = await setup('/projects/1/sessions/sess-1', {
+      SessionChatPanel: true,
+      FileSidebar: true,
+      FileViewer: true,
+      QuickFileSearchDialog: true,
+    })
+
+    const dockStore = useWorkspaceDockStore(pinia)
+    // File tree panel is hidden by default
+    expect(dockStore.fileTreeVisible).toBe(false)
+    expect(wrapper.find('[data-test="filetree-panel"]').exists()).toBe(false)
+
+    // Press Ctrl+\ to show independent file tree panel on the right
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '\\', code: 'Backslash', ctrlKey: true }))
+    await flushPromises()
+    expect(dockStore.fileTreeVisible).toBe(true)
+    expect(wrapper.find('[data-test="filetree-panel"]').exists()).toBe(true)
+
+    // Press Ctrl+\ again to hide it
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: '\\', code: 'Backslash', ctrlKey: true }))
+    await flushPromises()
+    expect(dockStore.fileTreeVisible).toBe(false)
+    expect(wrapper.find('[data-test="filetree-panel"]').exists()).toBe(false)
+
+    // Open a file tab and close it with Ctrl+W
+    dockStore.openFile({ projectId: 1, worktreeId: 0, path: 'src/demo.ts' })
+    await flushPromises()
+    expect(dockStore.openTabs).toHaveLength(1)
+    expect(dockStore.activeTabKey).toBe(dockStore.openTabs[0].key)
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'w', ctrlKey: true }))
+    await flushPromises()
+    expect(dockStore.openTabs).toHaveLength(0)
+  })
+
+  it('keeps right dock total width invariant when dragging filetree-resizer and lets preview panel expand when file tree hides', async () => {
+    const { wrapper, pinia } = await setup('/projects/1/sessions/sess-1', {
+      SessionChatPanel: true,
+      FileSidebar: true,
+      FileViewer: true,
+      QuickFileSearchDialog: true,
+    })
+
+    const dockStore = useWorkspaceDockStore(pinia)
+    dockStore.setPreviewCollapsed(false)
+    dockStore.setPreviewWidth(700)
+    dockStore.setFileTreeVisible(true)
+    await flushPromises()
+
+    const rightDock = wrapper.find('[data-test="workbench-right-dock"]')
+    expect(rightDock.exists()).toBe(true)
+    expect(rightDock.attributes('style')).toContain('700px')
+
+    // Dragging divider between preview dock and file tree updates fileTreeWidth without changing rightDock total width
+    const resizer = wrapper.find('[data-test="filetree-resizer"]')
+    await resizer.trigger('mousedown', { button: 0, clientX: 900 })
+    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 820 }))
+    window.dispatchEvent(new MouseEvent('mouseup'))
+    await flushPromises()
+
+    expect(dockStore.fileTreeWidth).toBe(340)
+    expect(dockStore.previewWidth).toBe(700)
+    expect(rightDock.attributes('style')).toContain('700px')
+
+    // Hiding file tree keeps rightDock at 700px so preview panel (flex: 1) expands into the freed area
+    dockStore.setFileTreeVisible(false)
+    await flushPromises()
+    expect(wrapper.find('[data-test="filetree-panel"]').exists()).toBe(false)
+    expect(rightDock.attributes('style')).toContain('700px')
+  })
 })

@@ -6,6 +6,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import MessageView from '../features/chat/rendering/MessageView.vue'
 import QuestionQueue from '../features/chat/interactions/QuestionQueue.vue'
 import SessionTabs from '../features/workspace/SessionTabs.vue'
+import WorkbenchTabStrip from '../shared/components/WorkbenchTabStrip.vue'
 import { tabKey, useOpenTabsStore } from '../stores/openTabs'
 import type { Capabilities } from '../api/sessions'
 import type { ChatEntry } from '../stores/sessions'
@@ -245,5 +246,34 @@ describe('session tabs and open-tabs store', () => {
     expect(wrapper.find('[data-test="menu-close"]').attributes('disabled')).toBeDefined()
     await wrapper.find('[data-test="menu-toggle-pin"]').trigger('click')
     expect(wrapper.emitted('togglePin')?.[0]?.[0]).toMatchObject({ sessionId: 's1' })
+  })
+
+  it('converts vertical mouse wheel into horizontal scroll and shows floating scrollbar only on overflow', async () => {
+    const wrapper = mount(WorkbenchTabStrip, {
+      slots: {
+        default: '<div class="wb-tab">Tab 1</div><div class="wb-tab">Tab 2</div>',
+      },
+    })
+
+    const scroller = wrapper.find('.wb-tab-scroller').element as HTMLElement
+    // Initially no overflow -> floating scrollbar not rendered
+    Object.defineProperty(scroller, 'clientWidth', { value: 200, configurable: true })
+    Object.defineProperty(scroller, 'scrollWidth', { value: 200, configurable: true })
+    ;(wrapper.vm as any).syncScrollbar()
+    await flushPromises()
+    expect(wrapper.find('[data-test="tab-floating-scrollbar"]').exists()).toBe(false)
+
+    // Overflowing tabs -> floating scrollbar appears with thumb
+    Object.defineProperty(scroller, 'scrollWidth', { value: 600, configurable: true })
+    ;(wrapper.vm as any).syncScrollbar()
+    await flushPromises()
+    expect(wrapper.find('[data-test="tab-floating-scrollbar"]').exists()).toBe(true)
+
+    // Wheel deltaY scrolls horizontally
+    const wheelEvent = new WheelEvent('wheel', { deltaY: 80, cancelable: true })
+    scroller.dispatchEvent(wheelEvent)
+    await flushPromises()
+    expect(scroller.scrollLeft).toBe(80)
+    expect(wheelEvent.defaultPrevented).toBe(true)
   })
 })

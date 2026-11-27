@@ -23,10 +23,15 @@ export interface WorkspaceScope {
 export const FILE_TREE_TAB_KEY = '__filetree__'
 const ACTIVITY_STORAGE_KEY = 'dev-platform-activity-pane-v1'
 const PREVIEW_WIDTH_STORAGE_KEY = 'dev-platform-preview-width-v1'
+const FILE_TREE_WIDTH_STORAGE_KEY = 'dev-platform-filetree-width-v1'
 const DOCK_LOCKED_KEY = 'dev-platform-workspace-dock-locked'
 const DOCK_LOCKED_SCOPE_KEY = 'dev-platform-workspace-dock-locked-scope'
 const DEFAULT_PREVIEW_WIDTH = 580
-const MIN_PREVIEW_WIDTH = 320
+export const MIN_PREVIEW_WIDTH = 320
+export const MIN_SPLIT_PREVIEW_WIDTH = 240
+export const DEFAULT_FILE_TREE_WIDTH = 260
+export const MIN_FILE_TREE_WIDTH = 200
+export const MAX_FILE_TREE_WIDTH = 480
 
 export function getFileName(filePath: string): string {
   const parts = filePath.replace(/\\/g, '/').split('/')
@@ -54,12 +59,14 @@ function readStorageBoolean(key: string, defaultVal: boolean): boolean {
   return defaultVal
 }
 
-function readStorageInt(key: string, defaultVal: number, minVal: number): number {
+function readStorageInt(key: string, defaultVal: number, minVal: number, maxVal?: number): number {
   try {
     const item = localStorage.getItem(key)
     if (item !== null) {
       const parsed = parseInt(item, 10)
-      if (!isNaN(parsed) && parsed >= minVal) return parsed
+      if (!isNaN(parsed) && parsed >= minVal) {
+        return maxVal !== undefined ? Math.min(maxVal, parsed) : parsed
+      }
     }
   } catch {
     // Persistence is best-effort only.
@@ -90,6 +97,13 @@ export const useWorkspaceDockStore = defineStore('workspaceDock', {
       activeTabKey: FILE_TREE_TAB_KEY as string,
       previewCollapsed: readStorageBoolean(ACTIVITY_STORAGE_KEY, false),
       previewWidth: readStorageInt(PREVIEW_WIDTH_STORAGE_KEY, DEFAULT_PREVIEW_WIDTH, MIN_PREVIEW_WIDTH),
+      fileTreeVisible: false,
+      fileTreeWidth: readStorageInt(
+        FILE_TREE_WIDTH_STORAGE_KEY,
+        DEFAULT_FILE_TREE_WIDTH,
+        MIN_FILE_TREE_WIDTH,
+        MAX_FILE_TREE_WIDTH,
+      ),
       quickSearchOpen: false,
     }
   },
@@ -257,6 +271,31 @@ export const useWorkspaceDockStore = defineStore('workspaceDock', {
       this.previewWidth = clamped
       try {
         localStorage.setItem(PREVIEW_WIDTH_STORAGE_KEY, String(clamped))
+      } catch {
+        // ignore
+      }
+    },
+
+    setFileTreeVisible(visible: boolean) {
+      this.fileTreeVisible = visible
+      if (
+        visible &&
+        !this.previewCollapsed &&
+        this.previewWidth < MIN_SPLIT_PREVIEW_WIDTH + this.fileTreeWidth
+      ) {
+        this.setPreviewWidth(MIN_SPLIT_PREVIEW_WIDTH + this.fileTreeWidth)
+      }
+    },
+
+    toggleFileTree() {
+      this.setFileTreeVisible(!this.fileTreeVisible)
+    },
+
+    setFileTreeWidth(width: number) {
+      const clamped = Math.min(MAX_FILE_TREE_WIDTH, Math.max(MIN_FILE_TREE_WIDTH, Math.round(width)))
+      this.fileTreeWidth = clamped
+      try {
+        localStorage.setItem(FILE_TREE_WIDTH_STORAGE_KEY, String(clamped))
       } catch {
         // ignore
       }

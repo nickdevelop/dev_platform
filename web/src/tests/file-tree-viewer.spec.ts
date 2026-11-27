@@ -627,6 +627,42 @@ describe('FileSidebar.vue', () => {
     expect(progressCard.exists()).toBe(true)
     expect(wrapper.find('[data-test="upload-error-msg"]').exists()).toBe(true)
   })
+
+  it('renders empty content for non-git projects when viewMode is changes-only', async () => {
+    const gitApi = await import('../api/git')
+    vi.spyOn(gitApi, 'getProjectGitInfo').mockResolvedValue({ isGit: false })
+    vi.spyOn(filesApi, 'getGitStatus').mockResolvedValue([])
+    vi.spyOn(filesApi, 'getGitCommits').mockResolvedValue([])
+
+    const wrapper = mount(FileSidebar, {
+      props: { projectId: 1, viewMode: 'changes-only' },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('[data-test="non-git-empty"]').exists()).toBe(true)
+    expect(wrapper.find('.commit-select').exists()).toBe(false)
+    expect(wrapper.find('.changes-list').exists()).toBe(false)
+    expect(wrapper.find('.tree-container').exists()).toBe(false)
+  })
+
+  it('renders only file tree without sub-tab switcher when viewMode is files-only', async () => {
+    vi.spyOn(filesApi, 'getFileTree').mockResolvedValue([
+      { name: 'README.md', path: 'README.md', isDir: false },
+    ])
+    vi.spyOn(filesApi, 'getGitStatus').mockResolvedValue([])
+    const gitApi = await import('../api/git')
+    vi.spyOn(gitApi, 'getProjectGitInfo').mockResolvedValue({ isGit: true, branch: 'main' })
+
+    const wrapper = mount(FileSidebar, {
+      props: { projectId: 1, directory: '/tmp/proj', viewMode: 'files-only' },
+    })
+    await flushPromises()
+
+    expect(wrapper.findAll('.sidebar-tab')).toHaveLength(0)
+    expect(wrapper.find('[data-test="open-terminal-btn"]').exists()).toBe(false)
+    expect(wrapper.find('.tree-container').exists()).toBe(true)
+    expect(wrapper.text()).toContain('README.md')
+  })
 })
 
 describe('CodeView.vue', () => {

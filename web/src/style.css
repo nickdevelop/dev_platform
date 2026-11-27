@@ -7,6 +7,7 @@
 @import './shared/styles/list-page.css';
 @import './shared/styles/settings-page.css';
 @import './shared/styles/entity-chip.css';
+@import './shared/styles/workbench-tabs.css';
 @import './shared/highlight.css';
 
 @tailwind base;

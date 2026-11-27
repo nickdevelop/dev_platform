@@ -99,5 +99,13 @@ describe('Shortcuts: matchReloadShortcut', () => {
     })
     assert.strictEqual(res2.isReload, false)
     assert.strictEqual(res2.isForceReload, false)
+
+    const resCloseTab = matchReloadShortcut({
+      type: 'keyDown',
+      key: 'w',
+      control: true,
+    })
+    assert.strictEqual(resCloseTab.isReload, false)
+    assert.strictEqual(resCloseTab.isForceReload, false)
   })
 })

@@ -12,9 +12,27 @@ import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { tabKey, type OpenTab } from '../../stores/openTabs'
 import BackendIcon from '../../shared/components/BackendIcon.vue'
 import RunningIndicator from '../../shared/components/RunningIndicator.vue'
+import WorkbenchTabStrip from '../../shared/components/WorkbenchTabStrip.vue'
 import { useActivityPane } from '../../shared/composables/useActivityPane'
+import { useWorkspaceDockStore } from '../../stores/workspaceDock'
 
 const { previewCollapsed, setPreviewCollapsed } = useActivityPane()
+let dockStore: ReturnType<typeof useWorkspaceDockStore> | null = null
+try {
+  dockStore = useWorkspaceDockStore()
+} catch {
+  dockStore = null
+}
+
+const isPreviewCollapsed = computed(() =>
+  dockStore ? dockStore.previewCollapsed : previewCollapsed.value,
+)
+
+function togglePreviewPane() {
+  const next = !isPreviewCollapsed.value
+  dockStore?.setPreviewCollapsed(next)
+  setPreviewCollapsed(next)
+}
 
 const props = withDefaults(
   defineProps<{
@@ -163,99 +181,100 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div v-if="props.tabs.length > 0" class="session-tabs" role="tablist" aria-label="已打开的页面" @keydown="onKeydown">
-    <div
-      v-for="tab in props.tabs"
-      :key="tabKey(tab)"
-      class="tab"
-      :class="{ active: tabKey(tab) === props.activeKey, pinned: isPinned(tab) }"
-      role="tab"
-      :aria-selected="tabKey(tab) === props.activeKey"
-      :title="titleOf(tab)"
-      data-test="open-tab"
-      :data-tab-key="tabKey(tab)"
-      :data-pinned="isPinned(tab) ? 'true' : undefined"
-      :data-session-id="tab.kind === 'session' ? tab.sessionId : undefined"
-      :data-chat-id="tab.kind === 'chat' ? tab.chatId : undefined"
-      @contextmenu.prevent="openMenu(tab, $event)"
-      @auxclick="onAuxClick(tab, $event)"
-      @mousedown.middle.prevent
-    >
-      <button type="button" class="tab-select" @click="emit('select', tab)">
-        <BackendIcon v-if="backendOf(tab)" :backend="backendOf(tab)" size="sm" class="tab-logo" />
-        <span v-if="isPinned(tab)" class="tab-pin" aria-hidden="true">
-          <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8">
-            <line x1="8" y1="11" x2="8" y2="15" />
-            <path d="M4 11h8l-1.5-6h-5L4 11z" />
-            <line x1="5.5" y1="2" x2="10.5" y2="2" />
-          </svg>
-        </span>
-        <span v-else-if="isSettings(tab)" class="tab-icon" aria-hidden="true">
-          <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5">
-            <circle cx="8" cy="8" r="2.5" />
-            <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41" />
-          </svg>
-        </span>
-        <span v-else-if="tab.kind === 'task'" class="tab-icon" aria-hidden="true">
-          <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5">
-            <rect x="3" y="3" width="10" height="11" rx="1" />
-            <path d="M6 1.5h4v2H6v-2zM5.5 7h5M5.5 10h3" />
-          </svg>
-        </span>
-        <span v-else-if="tab.kind === 'new-session' || tab.kind === 'new-chat'" class="tab-icon" aria-hidden="true">
-          <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path d="M11 2.5l2.5 2.5L5 13.5H2.5V11L11 2.5z" />
-          </svg>
-        </span>
-        <span v-else-if="!isRunning(tab) && !backendOf(tab)" class="tab-dot" aria-hidden="true"></span>
-        <RunningIndicator v-if="isRunning(tab)" />
-        <span class="tab-label">{{ label(tab) }}</span>
-      </button>
-      <button
-        v-if="!isPinned(tab)"
-        type="button"
-        class="tab-close"
-        :aria-label="closeLabel(tab)"
-        title="关闭"
-        data-test="close-tab"
-        @click.stop="emit('close', tab)"
+  <div v-if="props.tabs.length > 0" class="session-tabs-host" @keydown="onKeydown">
+    <WorkbenchTabStrip aria-label="已打开的页面" :active-key="props.activeKey">
+      <div
+        v-for="tab in props.tabs"
+        :key="tabKey(tab)"
+        class="wb-tab tab"
+        :class="{ active: tabKey(tab) === props.activeKey, pinned: isPinned(tab) }"
+        role="tab"
+        :aria-selected="tabKey(tab) === props.activeKey"
+        :title="titleOf(tab)"
+        data-test="open-tab"
+        :data-tab-key="tabKey(tab)"
+        :data-pinned="isPinned(tab) ? 'true' : undefined"
+        :data-session-id="tab.kind === 'session' ? tab.sessionId : undefined"
+        :data-chat-id="tab.kind === 'chat' ? tab.chatId : undefined"
+        @contextmenu.prevent="openMenu(tab, $event)"
+        @auxclick="onAuxClick(tab, $event)"
+        @mousedown.middle.prevent
       >
-        <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-          <line x1="3" y1="3" x2="13" y2="13" />
-          <line x1="13" y1="3" x2="3" y2="13" />
-        </svg>
-      </button>
-    </div>
+        <button type="button" class="wb-tab-select tab-select" @click="emit('select', tab)">
+          <BackendIcon v-if="backendOf(tab)" :backend="backendOf(tab)" size="sm" class="tab-logo" />
+          <span v-if="isPinned(tab)" class="tab-pin" aria-hidden="true">
+            <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8">
+              <line x1="8" y1="11" x2="8" y2="15" />
+              <path d="M4 11h8l-1.5-6h-5L4 11z" />
+              <line x1="5.5" y1="2" x2="10.5" y2="2" />
+            </svg>
+          </span>
+          <span v-else-if="isSettings(tab)" class="tab-icon" aria-hidden="true">
+            <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5">
+              <circle cx="8" cy="8" r="2.5" />
+              <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3.05 3.05l1.41 1.41M11.54 11.54l1.41 1.41M3.05 12.95l1.41-1.41M11.54 4.46l1.41-1.41" />
+            </svg>
+          </span>
+          <span v-else-if="tab.kind === 'task'" class="tab-icon" aria-hidden="true">
+            <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5">
+              <rect x="3" y="3" width="10" height="11" rx="1" />
+              <path d="M6 1.5h4v2H6v-2zM5.5 7h5M5.5 10h3" />
+            </svg>
+          </span>
+          <span v-else-if="tab.kind === 'new-session' || tab.kind === 'new-chat'" class="tab-icon" aria-hidden="true">
+            <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M11 2.5l2.5 2.5L5 13.5H2.5V11L11 2.5z" />
+            </svg>
+          </span>
+          <span v-else-if="!isRunning(tab) && !backendOf(tab)" class="tab-dot" aria-hidden="true"></span>
+          <RunningIndicator v-if="isRunning(tab)" />
+          <span class="wb-tab-label tab-label">{{ label(tab) }}</span>
+        </button>
+        <button
+          v-if="!isPinned(tab)"
+          type="button"
+          class="wb-tab-close tab-close"
+          :aria-label="closeLabel(tab)"
+          title="关闭"
+          data-test="close-tab"
+          @click.stop="emit('close', tab)"
+        >
+          <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+            <line x1="3" y1="3" x2="13" y2="13" />
+            <line x1="13" y1="3" x2="3" y2="13" />
+          </svg>
+        </button>
+      </div>
 
-    <button
-      type="button"
-      class="tab-add-btn"
-      :title="props.newTabTitle"
-      :aria-label="props.newTabTitle"
-      data-test="tab-add-session"
-      @click="emit('newTab')"
-    >
-      +
-    </button>
-
-    <div class="tab-trailing-actions">
-      <button
-        type="button"
-        class="tab-action-btn layout-toggle-btn"
-        :class="{ 'is-active': !previewCollapsed }"
-        data-test="toggle-layout-btn"
-        data-test-preview="toggle-preview-btn"
-        :aria-pressed="!previewCollapsed ? 'true' : 'false'"
-        :title="previewCollapsed ? '展开右侧工作区面板' : '收起右侧工作区面板'"
-        :aria-label="previewCollapsed ? '展开右侧工作区面板' : '收起右侧工作区面板'"
-        @click="setPreviewCollapsed(!previewCollapsed)"
-      >
-        <svg class="action-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8">
-          <rect x="3" y="3" width="18" height="18" rx="2" />
-          <line x1="15" y1="3" x2="15" y2="21" stroke-width="1.8" />
-        </svg>
-      </button>
-    </div>
+      <template #trailing>
+        <button
+          type="button"
+          class="wb-tab-action-btn tab-add-btn"
+          :title="props.newTabTitle"
+          :aria-label="props.newTabTitle"
+          data-test="tab-add-session"
+          @click="emit('newTab')"
+        >
+          +
+        </button>
+        <button
+          type="button"
+          class="wb-tab-action-btn layout-toggle-btn"
+          :class="{ 'is-active': !isPreviewCollapsed }"
+          data-test="toggle-layout-btn"
+          data-test-preview="toggle-preview-btn"
+          :aria-pressed="!isPreviewCollapsed ? 'true' : 'false'"
+          :title="isPreviewCollapsed ? '展开右侧工作区面板' : '收起右侧工作区面板'"
+          :aria-label="isPreviewCollapsed ? '展开右侧工作区面板' : '收起右侧工作区面板'"
+          @click="togglePreviewPane"
+        >
+          <svg class="action-icon" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8">
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <line x1="15" y1="3" x2="15" y2="21" stroke-width="1.8" />
+          </svg>
+        </button>
+      </template>
+    </WorkbenchTabStrip>
 
     <div
       v-if="menu"
@@ -294,93 +313,26 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.session-tabs {
-  display: flex;
-  align-items: stretch;
-  gap: 2px;
-  overflow-x: auto;
-  overflow-y: hidden;
-  padding: 0 0.5rem;
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-surface);
+.session-tabs-host {
   flex-shrink: 0;
-  min-height: 35px;
-  scrollbar-width: thin;
 }
 
-.session-tabs::-webkit-scrollbar {
-  height: 3px;
-}
-
-.tab {
-  display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  max-width: 13rem;
-  border: 1px solid transparent;
-  border-bottom: none;
-  border-top-left-radius: 6px;
-  border-top-right-radius: 6px;
-  margin-top: 2px;
-  padding: 0.25rem 0.35rem 0.25rem 0.6rem;
-  background: transparent;
-  white-space: nowrap;
-  transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
-  position: relative;
-}
-
-.tab:not(.active):hover {
-  background: var(--color-surface-muted);
-}
-
-.tab.active {
-  background: var(--color-bg);
-  border-color: var(--color-border);
-  border-bottom: 1px solid var(--color-bg);
-  margin-bottom: -1px;
-}
-
-.tab.active::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  border-top-left-radius: 5px;
-  border-top-right-radius: 5px;
-  background: var(--color-accent, #3b82f6);
-}
-
-.tab-select {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  min-width: 0;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.825rem;
-  color: var(--color-text-muted);
-  padding: 0.15rem 0.2rem;
-}
-
-.tab.active .tab-select {
-  color: var(--color-text);
-  font-weight: 600;
+.tab-add-btn {
+  font-size: var(--text-size-14);
+  font-weight: 400;
+  line-height: 1;
 }
 
 .tab-dot {
-  width: 0.45rem;
-  height: 0.45rem;
+  width: 6px;
+  height: 6px;
   border-radius: 999px;
   background: var(--color-border-strong);
   flex-shrink: 0;
 }
 
 .tab-logo {
-  margin-right: 0.1rem;
+  margin-right: 2px;
 }
 
 .tab-icon,
@@ -401,32 +353,6 @@ onBeforeUnmount(() => {
   color: var(--color-accent);
 }
 
-.tab-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tab-close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  border-radius: 4px;
-  color: var(--color-text-muted);
-  transition: color 0.15s ease, background-color 0.15s ease;
-  margin-left: 2px;
-}
-
-.tab-close:hover {
-  background: var(--color-surface-muted);
-  color: var(--color-danger, #ef4444);
-}
-
 .tab-menu-backdrop {
   position: fixed;
   inset: 0;
@@ -439,7 +365,7 @@ onBeforeUnmount(() => {
   min-width: 10.5rem;
   display: flex;
   flex-direction: column;
-  padding: 0.35rem;
+  padding: 6px;
   border: 1px solid var(--color-border);
   border-radius: 8px;
   background: var(--color-surface);
@@ -450,11 +376,11 @@ onBeforeUnmount(() => {
   border: none;
   background: transparent;
   text-align: left;
-  padding: 0.4rem 0.65rem;
+  padding: 6px 10px;
   border-radius: 5px;
   cursor: pointer;
   font: inherit;
-  font-size: 0.8125rem;
+  font-size: var(--text-size-12);
   color: var(--color-text);
   white-space: nowrap;
   transition: background-color 0.12s ease;
@@ -468,64 +394,5 @@ onBeforeUnmount(() => {
   color: var(--color-text-muted);
   cursor: default;
   opacity: 0.5;
-}
-
-.tab-add-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 24px;
-  width: 24px;
-  margin-left: 4px;
-  align-self: center;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 5px;
-  color: var(--color-text-muted);
-  font-size: 1.15rem;
-  font-weight: 300;
-  line-height: 1;
-  cursor: pointer;
-  transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
-}
-
-.tab-add-btn:hover {
-  background: var(--color-surface-muted);
-  border-color: var(--color-border);
-  color: var(--color-text);
-}
-
-.tab-trailing-actions {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  padding: 0 0.35rem;
-  flex-shrink: 0;
-}
-
-.tab-action-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  height: 24px;
-  width: 24px;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 4px;
-  color: var(--color-text-muted);
-  cursor: pointer;
-  transition: color 0.12s ease-out, background-color 0.12s ease-out, border-color 0.12s ease-out;
-}
-
-.tab-action-btn:hover {
-  background: var(--color-surface);
-  border-color: var(--color-border);
-  color: var(--color-text);
-}
-
-.tab-action-btn.is-active {
-  background: var(--color-accent-soft);
-  color: var(--color-accent, #3b82f6);
-  border-color: var(--color-border);
 }
 </style>

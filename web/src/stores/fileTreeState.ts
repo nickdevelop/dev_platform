@@ -60,14 +60,19 @@ export const useFileTreeStateStore = defineStore('fileTreeState', {
     },
 
     // retainOnly drops the memory of every session not in the list, so a
-    // closed tab releases its file tree memory.
+    // closed tab releases its file tree memory (including scoped :changes/:files keys).
     retainOnly(sessionIds: string[]) {
       const keep = new Set(sessionIds)
+      const isKept = (key: string) => {
+        if (keep.has(key)) return true
+        const base = key.replace(/:(changes|files)$/, '')
+        return keep.has(base)
+      }
       for (const sessionId of Object.keys(this.snapshots)) {
-        if (!keep.has(sessionId)) delete this.snapshots[sessionId]
+        if (!isKept(sessionId)) delete this.snapshots[sessionId]
       }
       for (const sessionId of Object.keys(this.data)) {
-        if (!keep.has(sessionId)) delete this.data[sessionId]
+        if (!isKept(sessionId)) delete this.data[sessionId]
       }
     },
   },

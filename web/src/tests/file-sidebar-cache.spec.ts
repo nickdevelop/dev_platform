@@ -149,4 +149,25 @@ describe('file sidebar data memory', () => {
     expect(wrapper.findComponent({ name: 'GitCommitBar' }).exists()).toBe(true)
     expect(wrapper.findComponent({ name: 'GitCommitDetailBar' }).exists()).toBe(false)
   })
+
+  it('isolates cache keys between changes-only and files-only instances of the same session', async () => {
+    const firstFiles = mount(FileSidebar, { props: { projectId: 1, sessionId: 's-split', viewMode: 'files-only' } })
+    await flushPromises()
+    const srcRow = firstFiles.findAll('.file-tree-row').find((r) => r.text().includes('src'))
+    await srcRow?.trigger('click')
+    await flushPromises()
+    firstFiles.unmount()
+
+    const firstChanges = mount(FileSidebar, { props: { projectId: 1, sessionId: 's-split', viewMode: 'changes-only' } })
+    await flushPromises()
+    firstChanges.unmount()
+
+    const store = useFileTreeStateStore()
+    expect(store.snapshotOf('s-split:files')?.expandedTreePaths).toContain('src')
+    expect(store.snapshotOf('s-split:changes')?.activeTab).toBe('changes')
+
+    store.retainOnly([])
+    expect(store.snapshotOf('s-split:files')).toBeUndefined()
+    expect(store.snapshotOf('s-split:changes')).toBeUndefined()
+  })
 })

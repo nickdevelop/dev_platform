@@ -1,12 +1,18 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { ElMessageBox } from 'element-plus'
-import { useWorkspaceDockStore, FILE_TREE_TAB_KEY } from '../../stores/workspaceDock'
+import {
+  useWorkspaceDockStore,
+  FILE_TREE_TAB_KEY,
+  MIN_PREVIEW_WIDTH,
+  MIN_SPLIT_PREVIEW_WIDTH,
+} from '../../stores/workspaceDock'
 import { useProjectsStore } from '../../stores/projects'
 import { useWorktreesStore } from '../../stores/worktrees'
 import { FileSidebar, FileViewer } from '../files'
 import type { CodeCommentCard } from '../files/types'
 import QuickFileSearchDialog from '../chat/pane/QuickFileSearchDialog.vue'
+import WorkbenchTabStrip from '../../shared/components/WorkbenchTabStrip.vue'
 
 const emit = defineEmits<{
   'add-comment': [card: CodeCommentCard]
@@ -78,8 +84,11 @@ function onResizerMouseDown(e: MouseEvent) {
   const onMouseMove = (ev: MouseEvent) => {
     if (!isResizing.value) return
     const delta = startX - ev.clientX
-    const maxWidth = Math.max(400, Math.min(window.innerWidth * 0.7, window.innerWidth - 360))
-    dockStore.setPreviewWidth(Math.min(maxWidth, Math.max(320, startWidth + delta)))
+    const minWidth = dockStore.fileTreeVisible
+      ? MIN_SPLIT_PREVIEW_WIDTH + dockStore.fileTreeWidth
+      : MIN_PREVIEW_WIDTH
+    const maxWidth = Math.max(minWidth, window.innerWidth - 400)
+    dockStore.setPreviewWidth(Math.min(maxWidth, Math.max(minWidth, startWidth + delta)))
   }
 
   const onMouseUp = () => {
@@ -96,7 +105,7 @@ function onResizerMouseDown(e: MouseEvent) {
 }
 
 // Ctrl+P / Cmd+P toggles quick search for the file tree's active/locked directory;
-// Alt+W closes the active preview file tab when expanded.
+// Ctrl+W / Cmd+W (Electron) and Alt+W close the active preview file tab when expanded.
 function onKeydown(e: KeyboardEvent) {
   if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'p') {
     if (!effectiveScope.value) return
@@ -105,19 +114,26 @@ function onKeydown(e: KeyboardEvent) {
     return
   }
   if (dockStore.previewCollapsed) return
-  if (!e.altKey || e.ctrlKey || e.metaKey || e.key.toLowerCase() !== 'w') return
   if (dockStore.activeTabKey === FILE_TREE_TAB_KEY) return
   if (!dockStore.openTabs.some((t) => t.key === dockStore.activeTabKey)) return
+
+  const isAltW = e.altKey && !e.ctrlKey && !e.metaKey && e.key.toLowerCase() === 'w'
+  const isCtrlW = (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'w'
+  if (!isAltW && !isCtrlW) return
+
   e.preventDefault()
+  if (isCtrlW) {
+    e.stopPropagation()
+  }
   void requestCloseTab(dockStore.activeTabKey)
 }
 
 onMounted(() => {
-  window.addEventListener('keydown', onKeydown)
+  window.addEventListener('keydown', onKeydown, true)
 })
 
 onUnmounted(() => {
-  window.removeEventListener('keydown', onKeydown)
+  window.removeEventListener('keydown', onKeydown, true)
   dockStore.closeQuickSearch()
 })
 
@@ -149,8 +165,7 @@ const currentDirectory = computed(() => {
     v-if="!dockStore.previewCollapsed"
     id="session-preview-pane"
     class="workspace-dock-pane"
-    :class="{ 'is-resizing': isResizing }"
-    :style="{ width: `${dockStore.previewWidth}px`, flex: `0 0 ${dockStore.previewWidth}px` }"
+    :class="{ 'is-resizing': isResizing, 'is-split-with-tree': dockStore.fileTreeVisible }"
     aria-label="工作区文件面板"
     data-test="activity-pane"
     data-test-preview="preview-pane"
@@ -166,45 +181,46 @@ const currentDirectory = computed(() => {
     </div>
 
     <div class="dock-inner">
-      <!-- Header Tab Bar (flush with SessionTabs) -->
-      <header class="dock-header">
-        <div class="dock-tabs-list" role="tablist">
-          <!-- Permanent Tab: Workspace File Tree -->
-          <button
-            type="button"
-            class="dock-tab filetree-permanent-tab"
-            :class="{ 'is-active': dockStore.activeTabKey === FILE_TREE_TAB_KEY }"
-            role="tab"
-            :aria-selected="dockStore.activeTabKey === FILE_TREE_TAB_KEY"
-            title="工作区文件树"
-            data-test="tab-filetree"
-            @click="dockStore.selectTab(FILE_TREE_TAB_KEY)"
-          >
+      <!-- Header Tab Bar (unified with SessionTabs) -->
+      <WorkbenchTabStrip aria-label="工作区文件标签" :active-key="dockStore.activeTabKey">
+        <!-- Permanent Tab: Git Changes (Workspace Files) -->
+        <div
+          class="wb-tab dock-tab filetree-permanent-tab"
+          :class="{ 'is-active': dockStore.activeTabKey === FILE_TREE_TAB_KEY }"
+          role="tab"
+          :aria-selected="dockStore.activeTabKey === FILE_TREE_TAB_KEY"
+          title="工作区 Git 变更"
+          data-test="tab-filetree"
+          @click="dockStore.selectTab(FILE_TREE_TAB_KEY)"
+        >
+          <button type="button" class="wb-tab-select">
             <svg class="filetree-tab-icon" viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8">
               <path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-6l-2-2H5a2 2 0 0 0-2 2z" />
             </svg>
-            <span class="file-tab-name">工作区文件</span>
+            <span class="wb-tab-label file-tab-name">工作区文件</span>
           </button>
+        </div>
 
-          <!-- Dynamic Opened File Tabs -->
-          <div
-            v-for="fileTab in dockStore.openTabs"
-            :key="fileTab.key"
-            class="dock-tab file-item-tab"
-            :class="{
-              'is-active': dockStore.activeTabKey === fileTab.key,
-              'is-foreign': dockStore.isTabForeign(fileTab),
-            }"
-            role="tab"
-            :aria-selected="dockStore.activeTabKey === fileTab.key"
-            :title="dockStore.isTabForeign(fileTab)
-              ? `${fileTab.path} (非当前工作区: ${getScopeBadge(fileTab.projectId, fileTab.worktreeId)})`
-              : fileTab.path"
-            data-test="tab-file"
-            @click="dockStore.selectTab(fileTab.key)"
-            @mousedown.middle.prevent="requestCloseTab(fileTab.key)"
-          >
-            <span class="file-tab-name">{{ fileTab.name }}</span>
+        <!-- Dynamic Opened File Tabs -->
+        <div
+          v-for="fileTab in dockStore.openTabs"
+          :key="fileTab.key"
+          class="wb-tab dock-tab file-item-tab"
+          :class="{
+            'is-active': dockStore.activeTabKey === fileTab.key,
+            'is-foreign': dockStore.isTabForeign(fileTab),
+          }"
+          role="tab"
+          :aria-selected="dockStore.activeTabKey === fileTab.key"
+          :title="dockStore.isTabForeign(fileTab)
+            ? `${fileTab.path} (非当前工作区: ${getScopeBadge(fileTab.projectId, fileTab.worktreeId)})`
+            : fileTab.path"
+          data-test="tab-file"
+          @click="dockStore.selectTab(fileTab.key)"
+          @mousedown.middle.prevent="requestCloseTab(fileTab.key)"
+        >
+          <button type="button" class="wb-tab-select">
+            <span class="wb-tab-label file-tab-name">{{ fileTab.name }}</span>
 
             <!-- Foreign Badge for cross-workspace files -->
             <span
@@ -228,25 +244,42 @@ const currentDirectory = computed(() => {
             >
               Diff
             </span>
+          </button>
 
-            <button
-              type="button"
-              class="tab-close-icon"
-              title="关闭标签"
-              aria-label="关闭标签"
-              data-test="close-file-tab"
-              @click.stop="requestCloseTab(fileTab.key, $event)"
-            >
-              ×
-            </button>
-          </div>
-        </div>
-
-        <!-- Trailing action controls: Lock & Collapse -->
-        <div class="dock-actions">
           <button
             type="button"
-            class="action-icon-btn lock-btn"
+            class="wb-tab-close tab-close-icon"
+            title="关闭标签 (Ctrl+W)"
+            aria-label="关闭标签"
+            data-test="close-file-tab"
+            @click.stop="requestCloseTab(fileTab.key, $event)"
+          >
+            <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <line x1="3" y1="3" x2="13" y2="13" />
+              <line x1="13" y1="3" x2="3" y2="13" />
+            </svg>
+          </button>
+        </div>
+
+        <!-- Trailing action controls: FileTree Toggle, Lock & Collapse -->
+        <template #trailing>
+          <button
+            type="button"
+            class="wb-tab-action-btn filetree-toggle-btn"
+            :class="{ 'is-active': dockStore.fileTreeVisible }"
+            data-test="toggle-filetree-panel-btn"
+            :title="dockStore.fileTreeVisible ? '隐藏文件树面板 (Ctrl+\\)' : '显示文件树面板 (Ctrl+\\)'"
+            :aria-label="dockStore.fileTreeVisible ? '隐藏文件树面板' : '显示文件树面板'"
+            @click="dockStore.toggleFileTree()"
+          >
+            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.8">
+              <path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-6l-2-2H5a2 2 0 0 0-2 2z" />
+            </svg>
+          </button>
+
+          <button
+            type="button"
+            class="wb-tab-action-btn lock-btn"
             :class="{ 'is-locked': dockStore.isLocked }"
             :title="dockStore.isLocked ? '当前工作区已锁定 (不跟随会话切换，点击解除)' : '锁定当前工作区 (切换会话不改变文件树)'"
             :aria-label="dockStore.isLocked ? '解除锁定工作区' : '锁定工作区'"
@@ -261,7 +294,7 @@ const currentDirectory = computed(() => {
 
           <button
             type="button"
-            class="action-icon-btn close-dock-btn"
+            class="wb-tab-action-btn close-dock-btn"
             data-test="close-preview-pane-btn"
             title="收起工作区面板 (Alt+2)"
             aria-label="收起工作区面板"
@@ -272,26 +305,27 @@ const currentDirectory = computed(() => {
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
           </button>
-        </div>
-      </header>
+        </template>
+      </WorkbenchTabStrip>
 
       <!-- Main Dock Body -->
       <div class="dock-body">
-        <!-- Tab 1: File Tree (Directory View) -->
+        <!-- Tab 1: Git Changes (Workspace Files) -->
         <div
           v-show="dockStore.activeTabKey === FILE_TREE_TAB_KEY"
           id="session-filetree-drawer"
           class="filetree-container"
-          data-test="filetree-drawer"
+          data-test="workspace-git-pane"
         >
           <FileSidebar
             v-if="effectiveScope"
-            :key="`${effectiveScope.projectId}:${effectiveScope.worktreeId}:${effectiveScope.sessionId || ''}`"
+            :key="`changes:${effectiveScope.projectId}:${effectiveScope.worktreeId}:${effectiveScope.sessionId || ''}`"
             :project-id="effectiveScope.projectId"
             :session-id="effectiveScope.sessionId"
             :worktree-id="effectiveScope.worktreeId"
             :directory="currentDirectory"
             :active-path="dockStore.currentTab?.path"
+            view-mode="changes-only"
             @select="(path, options) => dockStore.openFile({
               projectId: effectiveScope!.projectId,
               worktreeId: effectiveScope!.worktreeId,
@@ -349,6 +383,8 @@ const currentDirectory = computed(() => {
   position: relative;
   display: flex;
   flex-direction: column;
+  flex: 1 1 0%;
+  min-width: 320px;
   height: 100%;
   min-height: 0;
   background: var(--color-surface);
@@ -356,7 +392,10 @@ const currentDirectory = computed(() => {
   box-sizing: border-box;
   overflow: hidden;
   z-index: 10;
-  transition: width 0.15s ease-out;
+}
+
+.workspace-dock-pane.is-split-with-tree {
+  min-width: 240px;
 }
 
 .workspace-dock-pane.is-resizing {
@@ -398,72 +437,16 @@ const currentDirectory = computed(() => {
   overflow: hidden;
 }
 
-.dock-header {
-  height: 35px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  padding: 0 8px;
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-surface);
+.filetree-tab-icon {
   flex-shrink: 0;
-  box-sizing: border-box;
-}
-
-.dock-tabs-list {
-  display: flex;
-  align-items: stretch;
-  gap: 2px;
-  height: 100%;
-  overflow-x: auto;
-  overflow-y: hidden;
-  flex: 1;
-  min-width: 0;
-  scrollbar-width: thin;
-}
-
-.dock-tab {
-  border: none;
-  background: transparent;
-  padding: 0 8px;
-  height: 100%;
-  font-size: var(--text-size-11);
   color: var(--color-text-muted);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  white-space: nowrap;
-  user-select: none;
-  border-bottom: 2px solid transparent;
-  transition: color 0.12s ease-out, border-color 0.12s ease-out, background-color 0.12s ease-out;
 }
 
-.dock-tab:hover {
-  color: var(--color-text);
-  background: var(--color-surface-muted);
-}
-
-.dock-tab.is-active {
-  color: var(--color-text);
-  border-bottom-color: var(--color-primary);
-  font-weight: 600;
-}
-
-.file-item-tab {
-  max-width: 170px;
+.dock-tab.is-active .filetree-tab-icon {
+  color: var(--color-accent);
 }
 
 /* Foreign Tab: Highlight for cross-workspace files */
-.dock-tab.is-foreign {
-  background: var(--color-warning-soft);
-}
-
-.dock-tab.is-foreign.is-active {
-  border-bottom-color: var(--color-warning);
-}
-
 .foreign-badge {
   font-size: var(--text-size-10);
   line-height: 1;
@@ -472,12 +455,6 @@ const currentDirectory = computed(() => {
   background: var(--color-warning-soft);
   color: var(--color-warning);
   max-width: 60px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.file-tab-name {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -498,56 +475,6 @@ const currentDirectory = computed(() => {
   background: var(--color-warning-soft);
   color: var(--color-warning);
   font-family: var(--font-mono);
-}
-
-.tab-close-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 14px;
-  height: 14px;
-  border-radius: 2px;
-  border: none;
-  background: transparent;
-  color: var(--color-text-muted);
-  font-size: var(--text-size-11);
-  line-height: 1;
-  cursor: pointer;
-  padding: 0;
-  margin-left: 2px;
-}
-
-.tab-close-icon:hover {
-  background: var(--color-danger-soft);
-  color: var(--color-danger);
-}
-
-.dock-actions {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  flex-shrink: 0;
-}
-
-.action-icon-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border: 1px solid transparent;
-  border-radius: 3px;
-  background: transparent;
-  color: var(--color-text-muted);
-  cursor: pointer;
-  transition: all 0.12s ease-out;
-}
-
-.action-icon-btn:hover {
-  background: var(--color-surface-muted);
-  border-color: var(--color-border);
-  color: var(--color-text);
 }
 
 .lock-btn.is-locked {

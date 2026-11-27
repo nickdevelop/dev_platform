@@ -97,4 +97,28 @@ describe('WorkspaceDockStore', () => {
     expect(store.openTabs.length).toBe(0)
     expect(store.activeTabKey).toBe(FILE_TREE_TAB_KEY)
   })
+
+  it('defaults fileTreeVisible to false, toggles visibility, and persists fileTreeWidth', () => {
+    const store = useWorkspaceDockStore()
+    expect(store.fileTreeVisible).toBe(false)
+    expect(store.fileTreeWidth).toBe(260)
+
+    store.toggleFileTree()
+    expect(store.fileTreeVisible).toBe(true)
+
+    store.setFileTreeVisible(false)
+    expect(store.fileTreeVisible).toBe(false)
+
+    store.setFileTreeWidth(120)
+    expect(store.fileTreeWidth).toBe(200)
+
+    store.setFileTreeWidth(340)
+    expect(store.fileTreeWidth).toBe(340)
+    expect(localStorage.getItem('dev-platform-filetree-width-v1')).toBe('340')
+
+    // Clamps fileTreeWidth to MAX_FILE_TREE_WIDTH (480, same as secondary sidebar)
+    store.setFileTreeWidth(700)
+    expect(store.fileTreeWidth).toBe(480)
+    expect(localStorage.getItem('dev-platform-filetree-width-v1')).toBe('480')
+  })
 })

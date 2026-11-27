@@ -26,23 +26,38 @@ import GitCommitBar from './GitCommitBar.vue'
 import GitCommitDetailBar from './GitCommitDetailBar.vue'
 import type { FileTreeNode, GitCommitItem, GitFileChangeStatus, GitStatusItem } from './types'
 
-const props = defineProps<{
-  projectId: number
-  // The session this tree belongs to. Its expansions, tab and search survive the
-  // sidebar unmounting when the panel or the tree is collapsed.
-  sessionId?: string
-  activePath?: string
-  // Non-zero scopes every file and git call to one git worktree.
-  worktreeId?: number
-  // Real working directory for path display and copy.
-  directory?: string
-  // Current git branch for display
-  branch?: string
-}>()
+const props = withDefaults(
+  defineProps<{
+    projectId: number
+    // The session this tree belongs to. Its expansions, tab and search survive the
+    // sidebar unmounting when the panel or the tree is collapsed.
+    sessionId?: string
+    activePath?: string
+    // Non-zero scopes every file and git call to one git worktree.
+    worktreeId?: number
+    // Real working directory for path display and copy.
+    directory?: string
+    // Current git branch for display
+    branch?: string
+    // 'full' preserves both sub-tabs; 'changes-only' shows only Git changes (empty for non-Git);
+    // 'files-only' shows only the workspace file tree.
+    viewMode?: 'full' | 'changes-only' | 'files-only'
+  }>(),
+  {
+    viewMode: 'full',
+  },
+)
+
+const cacheKey = computed(() => {
+  if (!props.sessionId) return undefined
+  if (props.viewMode === 'changes-only') return `${props.sessionId}:changes`
+  if (props.viewMode === 'files-only') return `${props.sessionId}:files`
+  return props.sessionId
+})
 
 const treeState = useFileTreeStateStore()
-const saved = props.sessionId ? treeState.snapshotOf(props.sessionId) : undefined
-const savedData = props.sessionId ? treeState.dataOf(props.sessionId) : undefined
+const saved = cacheKey.value ? treeState.snapshotOf(cacheKey.value) : undefined
+const savedData = cacheKey.value ? treeState.dataOf(cacheKey.value) : undefined
 // Loaded data is reused only for the same project and worktree it was loaded for.
 const restoredData =
   savedData && savedData.projectId === props.projectId && savedData.worktreeId === (props.worktreeId ?? 0)
@@ -69,7 +84,14 @@ const emit = defineEmits<{
   'branch-changed': [branch: string]
 }>()
 
-const activeTab = ref<'changes' | 'all'>(saved?.activeTab ?? 'all')
+const activeTab = ref<'changes' | 'all'>(
+  props.viewMode === 'changes-only'
+    ? 'changes'
+    : props.viewMode === 'files-only'
+      ? 'all'
+      : (saved?.activeTab ?? 'all'),
+)
+const isNonGitRepo = ref(false)
 const loading = ref(false)
 const error = ref('')
 const treeNodes = ref<FileTreeNode[]>(restoredData ? copyOf(restoredData.treeNodes) : [])
@@ -173,8 +195,8 @@ const historyTreeResult = computed(() => {
 
 // Keeps the loaded data for the next open of this session's tree.
 function persistData() {
-  if (!props.sessionId) return
-  treeState.saveData(props.sessionId, {
+  if (!cacheKey.value) return
+  treeState.saveData(cacheKey.value, {
     projectId: props.projectId,
     worktreeId: props.worktreeId ?? 0,
     selectedCommit: selectedCommit.value,
@@ -189,24 +211,35 @@ async function refresh() {
   loading.value = true
   error.value = ''
   try {
+    const needTree = props.viewMode !== 'changes-only'
+    const needCommits = props.viewMode !== 'files-only'
     const [tree, status, recentCommits, gitInfo] = await Promise.all([
-      getFileTree(props.projectId, undefined, props.worktreeId),
+      needTree ? getFileTree(props.projectId, undefined, props.worktreeId) : Promise.resolve([]),
       getGitStatus(props.projectId, selectedCommit.value, props.worktreeId).catch(() => []),
-      getGitCommits(props.projectId, 20, props.worktreeId).catch(() => []),
+      needCommits ? getGitCommits(props.projectId, 20, props.worktreeId).catch(() => []) : Promise.resolve([]),
       getProjectGitInfo(props.projectId, props.worktreeId).catch(() => null),
     ])
-    treeNodes.value = tree
+    if (needTree) {
+      treeNodes.value = tree
+    }
     gitChanges.value = status
-    commits.value = recentCommits
-    if (gitInfo?.branch) {
-      localBranch.value = gitInfo.branch
+    if (needCommits) {
+      commits.value = recentCommits
+    }
+    if (gitInfo !== null) {
+      isNonGitRepo.value = gitInfo.isGit === false
+      localBranch.value = gitInfo.branch || ''
+    } else {
+      isNonGitRepo.value = false
     }
     localAhead.value = gitInfo?.ahead || 0
     localBehind.value = gitInfo?.behind || 0
     updateExpandedChangeDirs()
     // The children are loaded through the reactive nodes: writing to the raw
     // response would leave the view showing the loading state.
-    await loadExpandedChildren(treeNodes.value)
+    if (needTree) {
+      await loadExpandedChildren(treeNodes.value)
+    }
     persistData()
   } catch (err) {
     error.value = err instanceof Error ? err.message : '加载文件失败'
@@ -401,7 +434,7 @@ watch(
     expandedTreePaths: [...expandedTreePaths.value],
   }),
   (snapshot) => {
-    if (props.sessionId) treeState.save(props.sessionId, snapshot)
+    if (cacheKey.value) treeState.save(cacheKey.value, snapshot)
   },
 )
 
@@ -578,39 +611,49 @@ async function confirmDelete() {
       @change="onFilesSelected"
     />
 
+    <!-- Non-Git project in changes-only mode renders empty -->
+    <div
+      v-if="props.viewMode === 'changes-only' && isNonGitRepo"
+      class="non-git-empty flex-1"
+      data-test="non-git-empty"
+    ></div>
+
+    <template v-else>
     <!-- Top header: Tabs + Path & Branch + Upload + Refresh -->
     <div class="sidebar-header flex items-center justify-between p-2 border-b border-platform-border bg-platform-surface-muted shrink-0 gap-1.5 min-w-0">
       <div class="sidebar-tabs flex items-center gap-1.5 min-w-0 flex-1">
-        <button
-          type="button"
-          class="sidebar-tab inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors cursor-pointer shrink-0"
-          :class="[
-            activeTab === 'changes'
-              ? 'is-active text-platform-primary bg-platform-surface font-semibold shadow-xs'
-              : 'text-platform-text-muted hover:text-platform-text hover:bg-platform-surface-muted',
-          ]"
-          @click="activeTab = 'changes'"
-        >
-          变更
-          <span
-            v-if="changesCount > 0"
-            class="badge-count px-1.5 bg-platform-primary-soft text-platform-primary"
+        <template v-if="props.viewMode === 'full'">
+          <button
+            type="button"
+            class="sidebar-tab inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors cursor-pointer shrink-0"
+            :class="[
+              activeTab === 'changes'
+                ? 'is-active text-platform-primary bg-platform-surface font-semibold shadow-xs'
+                : 'text-platform-text-muted hover:text-platform-text hover:bg-platform-surface-muted',
+            ]"
+            @click="activeTab = 'changes'"
           >
-            {{ changesCount }}
-          </span>
-        </button>
-        <button
-          type="button"
-          class="sidebar-tab inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors cursor-pointer shrink-0"
-          :class="[
-            activeTab === 'all'
-              ? 'is-active text-platform-primary bg-platform-surface font-semibold shadow-xs'
-              : 'text-platform-text-muted hover:text-platform-text hover:bg-platform-surface-muted',
-          ]"
-          @click="activeTab = 'all'"
-        >
-          所有文件
-        </button>
+            变更
+            <span
+              v-if="changesCount > 0"
+              class="badge-count px-1.5 bg-platform-primary-soft text-platform-primary"
+            >
+              {{ changesCount }}
+            </span>
+          </button>
+          <button
+            type="button"
+            class="sidebar-tab inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors cursor-pointer shrink-0"
+            :class="[
+              activeTab === 'all'
+                ? 'is-active text-platform-primary bg-platform-surface font-semibold shadow-xs'
+                : 'text-platform-text-muted hover:text-platform-text hover:bg-platform-surface-muted',
+            ]"
+            @click="activeTab = 'all'"
+          >
+            所有文件
+          </button>
+        </template>
 
         <!-- 项目路径：在所有文件选项右侧显示，显示全，位置不够显示...，移除复制按钮 -->
         <span
@@ -622,9 +665,9 @@ async function confirmDelete() {
           {{ workspaceDir }}
         </span>
 
-        <!-- 打开服务器终端按钮：自动定位到该目录并以弹窗打开 -->
+        <!-- 打开服务器终端按钮：仅在非独立文件树面板模式下显示 -->
         <button
-          v-if="workspaceDir"
+          v-if="workspaceDir && props.viewMode !== 'files-only'"
           type="button"
           class="open-terminal-btn inline-flex items-center justify-center w-5 h-5 rounded text-platform-text-muted hover:text-platform-text hover:bg-platform-surface-muted transition-colors cursor-pointer shrink-0"
           title="打开服务器终端并定位到该目录"
@@ -1068,12 +1111,13 @@ async function confirmDelete() {
       @stage-all-and-commit="onStageAllAndCommit"
       @error="error = $event"
     />
-    <!-- Bottom Git Commit Detail Bar (visible in changes tab for history commit) -->
+    <!-- Bottom Git Commit detail bar end -->
     <GitCommitDetailBar
       v-else-if="activeTab === 'changes' && isHistoryCommit"
       :commit="selectedCommitItem"
       @reset="selectedCommit = ''"
     />
+    </template>
 
     <!-- Discard Confirmation Dialog -->
     <UiDialog
