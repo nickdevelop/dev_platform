@@ -25,6 +25,42 @@ make build         # produces bin/platform
 `make verify` runs the full check suite (go vet, Go tests, frontend unit
 tests, frontend build).
 
+### Frontend development mode (hot reload)
+
+`./dev.sh dev` (Linux/WSL) starts the Vite dev server for `web/` with HMR
+instead of serving the built `web/dist`. It does **not** start or stop the
+backend: point it at a backend you already run (`./dev.sh run` or
+`./dev.sh start`) so a running session, agent instance or the machine-wide
+opencode service stays untouched while the UI reloads.
+
+The dev server binds `0.0.0.0` — never loopback only — because the platform is
+a plain-HTTP LAN service and the dev UI has to be reachable from other machines
+the same way the built UI is. (Vite's own default, `localhost`, binds `::1`
+only on a dual-stack host, so the address is always passed explicitly.)
+
+```sh
+./dev.sh run &                    # backend on :18080 (devctl's default listen)
+./dev.sh dev                      # LAN-reachable dev UI on :5173, /api proxied to 127.0.0.1:18080
+./dev.sh dev --port 3000          # extra arguments are forwarded to Vite and win
+
+# `./dev.sh start` binds :18081 instead, so point the proxy there when you
+# develop against a backgrounded server:
+DEV_API_PROXY=http://127.0.0.1:18081 ./dev.sh dev
+
+# Loopback only, when the machine sits on an untrusted network:
+DEV_UI_HOST=127.0.0.1 ./dev.sh dev
+```
+
+| Variable | Meaning | Default |
+| --- | --- | --- |
+| `DEV_API_PROXY` | Backend the Vite `/api` proxy targets (also used by `web/vite.config.ts`) | `http://127.0.0.1:18080` |
+| `DEV_UI_HOST` | Dev server bind address (`127.0.0.1` / `::1` to keep it local) | `0.0.0.0` |
+| `DEV_UI_PORT` | Vite dev server port | Vite's own `5173` |
+
+`E2E_API_PROXY` still wins over `DEV_API_PROXY`, so `make e2e` always keeps
+its own throwaway backend; the E2E harness starts Vite itself and stays on
+`127.0.0.1`, so a suite run is never exposed to the LAN.
+
 To build and install into a running checkout in one step, run `./deploy.sh`
 (Linux/WSL): it builds through `cmd/devctl`, then copies `bin/platform` and
 `web/dist` into the deployment directory (`/data/tools/devplatform` by

@@ -13,6 +13,13 @@
 # Usage:
 #   ./dev.sh build             Build the frontend (web/dist) and server (bin/platform)
 #   ./dev.sh run               Run the server in the foreground (Ctrl+C stops it)
+#   ./dev.sh dev [vite args]   Run the frontend dev server (Vite HMR) against
+#                              a locally running backend — the backend is NOT
+#                              started here (./dev.sh run answers on 18080,
+#                              the proxy default). The dev server binds every
+#                              interface (LAN reachable, like the server),
+#                              never loopback only; extra arguments go straight
+#                              to Vite, e.g. `./dev.sh dev --port 3000`
 #   ./dev.sh start [--build]   Start the server; builds first when the binary is
 #                              missing or --build is given
 #   ./dev.sh restart [--build] Stop, then start (rebuild first with --build)
@@ -27,6 +34,15 @@
 #                                               $PLATFORM_DATA_DIR, else the
 #                                               user config dir)
 #   DEV_WEB_DIR       Built web assets dir     (default web/dist)
+#   DEV_API_PROXY     Backend the Vite dev server proxies /api to when running
+#                     in dev mode (default http://127.0.0.1:18080, which is
+#                     what ./dev.sh run binds by default; ./dev.sh start uses
+#                     18081, so override this variable for it)
+#   DEV_UI_PORT       Vite dev server port     (default Vite's own 5173)
+#   DEV_UI_HOST       Vite dev server bind address (default 0.0.0.0: the dev
+#                     server follows the platform's plain-HTTP LAN model, so it
+#                     is reachable from other machines on the network; set
+#                     127.0.0.1 or ::1 to keep it loopback only)
 #
 set -euo pipefail
 
@@ -39,6 +55,16 @@ BINARY="bin/platform"
 WEB_DIR="${DEV_WEB_DIR:-web/dist}"
 LISTEN_ADDR="${DEV_LISTEN_ADDR:-0.0.0.0:18081}"
 DATA_DIR="${DEV_DATA_DIR:-}"
+# Frontend dev mode (`dev`): the Vite dev server proxies same-origin /api to
+# this backend, which must already be running (see the dev() function).
+API_PROXY="${DEV_API_PROXY:-http://127.0.0.1:18080}"
+UI_PORT="${DEV_UI_PORT:-}"
+# Bind address of the dev server. Deliberately not loopback-only: the platform
+# is a plain-HTTP LAN service, so the dev UI has to be reachable from other
+# machines (phones, another laptop) the same way the built UI is. Vite's own
+# default is `localhost`, which on a dual-stack host binds ::1 only — so the
+# address is passed explicitly instead of left to the tool.
+UI_HOST="${DEV_UI_HOST:-0.0.0.0}"
 
 # Runtime state (PID + log) lives in an ignored directory so it never shows up
 # in git status and `make clean` cannot delete a running server's PID file.
@@ -78,6 +104,37 @@ build() {
 # run executes the server in the foreground via devctl; Ctrl+C stops it.
 run() {
   go run ./cmd/devctl run "$@"
+}
+
+# dev runs the frontend in development mode (Vite dev server with HMR) and
+# proxies same-origin /api to the already-running backend at $API_PROXY. The
+# backend is deliberately left alone: this command never starts or stops it, so
+# a running session, agent instance or the machine-wide opencode service stays
+# untouched while the UI reloads.
+#
+# It binds $UI_HOST (0.0.0.0 by default, never loopback-only) so the dev UI is
+# reachable on the LAN like the built UI; Vite's own default `localhost` binds
+# ::1 only on a dual-stack host, so the address is always passed explicitly.
+dev() {
+  require_cmd npm
+  if [ ! -d web/node_modules ]; then
+    log "installing frontend dependencies"
+    (cd web && npm ci)
+  fi
+
+  local -a vite_args=(--host "$UI_HOST")
+  [ -n "$UI_PORT" ] && vite_args+=(--port "$UI_PORT")
+  # Any remaining CLI arguments go straight to Vite and win over the defaults
+  # above (a later --host / --port replaces the one passed here).
+  vite_args+=("$@")
+
+  log "vite dev server on $UI_HOST (LAN reachable), /api proxied to $API_PROXY — Ctrl+C stops it"
+  log "the backend is not started here: ./dev.sh run answers on 18080 by default"
+  # `--` forwards the args to vite; DEV_API_PROXY is read by web/vite.config.ts.
+  (
+    cd web
+    DEV_API_PROXY="$API_PROXY" npm run dev -- ${vite_args[@]+"${vite_args[@]}"}
+  )
 }
 
 # probe_host extracts a loopback-reachable host:port pair from the configured
@@ -209,6 +266,9 @@ case "$cmd" in
     ;;
   run)
     run "$@"
+    ;;
+  dev)
+    dev "$@"
     ;;
   start)
     force=0

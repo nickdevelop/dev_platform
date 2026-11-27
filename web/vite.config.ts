@@ -5,9 +5,14 @@ import Components from 'unplugin-vue-components/vite'
 import { ElementPlusResolver } from 'unplugin-vue-components/resolvers'
 
 // Same-origin /api in development; in production the Go service and the built
-// frontend are served from one origin. E2E runs move the backend to another
-// port and point the proxy at it via E2E_API_PROXY.
-const apiTarget = process.env.E2E_API_PROXY ?? 'http://127.0.0.1:8080'
+// frontend are served from one origin. The proxy target resolves, in order:
+//   E2E_API_PROXY — the Playwright harness (web/scripts/run-e2e.mjs) runs the
+//                   backend on a throwaway port and must win over a stray
+//                   DEV_API_PROXY left in the developer's shell.
+//   DEV_API_PROXY — a non-default local backend, passed by `./dev.sh dev`.
+// The default is the loopback backend `./dev.sh dev` expects (`./dev.sh run`).
+const apiTarget =
+  process.env.E2E_API_PROXY ?? process.env.DEV_API_PROXY ?? 'http://127.0.0.1:18080'
 
 export default defineConfig({
   plugins: [
