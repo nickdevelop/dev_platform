@@ -11,14 +11,15 @@ export interface ExtFilterGroup {
 
 export const EXT_FILTER_GROUPS: ExtFilterGroup[] = [
   { label: 'Java', exts: ['.java'] },
+  { label: '前端', exts: ['.js', '.jsx', '.ts', '.tsx', '.vue', '.css', '.scss', '.less'] },
   { label: '前端 JS/TS', exts: ['.js', '.jsx', '.ts', '.tsx', '.vue'] },
+  { label: '样式', exts: ['.css', '.scss', '.less'] },
   { label: 'Go', exts: ['.go'] },
   { label: 'Python', exts: ['.py'] },
   { label: 'SQL', exts: ['.sql'] },
   { label: 'Shell 脚本', exts: ['.sh', '.bash', '.ps1'] },
   { label: 'C/C++', exts: ['.c', '.h', '.cpp', '.hpp'] },
   { label: 'Rust', exts: ['.rs'] },
-  { label: '样式', exts: ['.css', '.scss', '.less'] },
   { label: '配置数据', exts: ['.json', '.yaml', '.yml', '.toml', '.xml', '.properties'] },
   { label: '文档', exts: ['.md', '.txt'] },
 ]
