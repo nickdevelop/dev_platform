@@ -1103,7 +1103,7 @@ async function copyMessage(entry: ChatEntry) {
   width: 100%;
   max-width: 100%;
   margin-right: 0;
-  padding: 0;
+  padding: 0 0 0 0.5rem;
   background: transparent;
   border-radius: 0;
   color: var(--color-text);

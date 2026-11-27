@@ -594,7 +594,7 @@ async function confirmDelete() {
           变更
           <span
             v-if="changesCount > 0"
-            class="badge-count px-1.5 py-0.5 rounded-full text-2xs bg-platform-primary-soft text-platform-primary font-mono font-semibold"
+            class="badge-count px-1.5 bg-platform-primary-soft text-platform-primary"
           >
             {{ changesCount }}
           </span>

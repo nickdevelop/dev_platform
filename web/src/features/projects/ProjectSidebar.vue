@@ -158,7 +158,7 @@ function onShowTaskSessionsChange() {
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-gutter: stable;
-  padding: 4px 6px 16px;
+  padding: 2px;
   flex: 1;
 }
 

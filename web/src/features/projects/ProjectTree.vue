@@ -311,7 +311,7 @@ async function confirmDeleteSession() {
 </script>
 
 <template>
-  <ul class="project-tree space-y-1 py-1 px-0.5 text-sm select-none" aria-label="项目与会话">
+  <ul class="project-tree space-y-1 py-0 px-0 text-sm select-none" aria-label="项目与会话">
     <li v-for="project in visibleProjects" :key="project.id" class="project">
       <div
         class="project-row group flex items-center justify-between px-1.5 py-1.5 rounded transition-colors text-platform-text hover:bg-platform-surface-muted"
