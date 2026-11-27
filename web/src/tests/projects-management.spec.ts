@@ -2,8 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { useProjectsStore } from '../stores/projects'
-import { useOpenTabsStore, tabKey } from '../stores/openTabs'
-import SessionTabs from '../features/workspace/SessionTabs.vue'
+import ProjectsManagementDialog from '../features/projects/ProjectsManagementDialog.vue'
 import ProjectsManagementView from '../features/projects/ProjectsManagementView.vue'
 import TaskChatDialog from '../features/tasks/TaskChatDialog.vue'
 
@@ -43,25 +42,21 @@ describe('projects management, display ordering, and task dialog minimal mode', 
     expect(store.orderedVisibleProjects.map((p) => p.id)).toEqual([1, 2, 3])
   })
 
-  it('opens and renders projects-management tab in openTabs and SessionTabs', async () => {
-    const openTabs = useOpenTabsStore()
-    openTabs.openProjectsManagement()
+  it('renders ProjectsManagementDialog when visible', async () => {
+    const projectsStore = useProjectsStore()
+    projectsStore.projects = [
+      { id: 1, name: 'Project A', path: '/path/a', isGit: false },
+    ]
 
-    expect(openTabs.tabs).toHaveLength(1)
-    expect(openTabs.tabs[0].kind).toBe('projects-management')
-    expect(tabKey(openTabs.tabs[0])).toBe('projects-management')
-
-    const wrapper = mount(SessionTabs, {
+    const wrapper = mount(ProjectsManagementDialog, {
       props: {
-        tabs: openTabs.tabs,
-        activeKey: 'projects-management',
+        visible: true,
       },
     })
     await flushPromises()
 
-    const tab = wrapper.find('[data-test="open-tab"]')
-    expect(tab.exists()).toBe(true)
-    expect(tab.text()).toContain('项目管理')
+    expect(wrapper.find('[data-test="projects-management-dialog"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('项目列表与显示设置')
   })
 
   it('renders ProjectsManagementView with order controls and visibility toggles', async () => {

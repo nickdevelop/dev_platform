@@ -30,6 +30,7 @@ import { useOpenTabsStore } from '../../stores/openTabs'
 import { useDraftsStore } from '../../stores/drafts'
 import { useViewportStore } from '../../stores/viewport'
 import { useFileTreeStateStore } from '../../stores/fileTreeState'
+import { useWorkspaceDockStore } from '../../stores/workspaceDock'
 import type { GitInfo } from '../../api/git'
 import { cachedModels } from '../../shared/modelCache'
 import { computeContextUsage } from '../../shared/contextUsage'
@@ -83,6 +84,7 @@ const worktreesStore = useWorktreesStore()
 const draftsStore = useDraftsStore()
 const viewportStore = useViewportStore()
 const fileTreeState = useFileTreeStateStore()
+const workspaceDock = useWorkspaceDockStore()
 const router = useRouter()
 
 let currentSessionId = props.sessionId
@@ -122,6 +124,16 @@ function openFileInPreview(
   const reqCommit = options?.commitRef
   const reqMsg = options?.commitMessage
   const reqLine = options?.initialLine
+
+  workspaceDock.openFile({
+    projectId: props.projectId,
+    worktreeId: activeWorktreeId.value,
+    path: cleanPath,
+    mode: reqMode,
+    commitRef: reqCommit,
+    commitMessage: reqMsg,
+    initialLine: reqLine,
+  })
 
   const existing = openFileTabs.value.find((f) => f.path === cleanPath)
   if (!existing) {
@@ -409,6 +421,16 @@ watch(
   { deep: true },
 )
 
+watch(
+  () => draftsStore.getSessionDraft(props.sessionId).commentCards,
+  (cards) => {
+    if (cards && Array.isArray(cards) && cards.length !== commentCards.value.length) {
+      commentCards.value = [...cards]
+    }
+  },
+  { deep: true },
+)
+
 function onAddCodeComment(card: CodeCommentCard) {
   commentCards.value.push(card)
 }
@@ -536,6 +558,16 @@ const FOLLOW_THRESHOLD_PX = 24
 const activeSession = computed(() => sessions.sessionById(props.sessionId))
 const isCollabSession = computed(() => activeSession.value?.backend === 'group-flow')
 const activeWorktreeId = computed(() => activeSession.value?.worktreeId ?? 0)
+
+watch(
+  [() => props.projectId, activeWorktreeId],
+  ([pId, wtId]) => {
+    if (pId) {
+      workspaceDock.setSessionScope(pId, wtId ?? 0)
+    }
+  },
+  { immediate: true },
+)
 
 watch(
   () => props.projectId,

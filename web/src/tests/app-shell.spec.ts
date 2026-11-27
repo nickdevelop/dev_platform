@@ -9,6 +9,8 @@ import { createPinia, setActivePinia } from 'pinia'
 import type { Component } from 'vue'
 import App from '../App.vue'
 import ProjectTree from '../features/projects/ProjectTree.vue'
+import ProjectsManagementDialog from '../features/projects/ProjectsManagementDialog.vue'
+import ProjectSettingsDialog from '../features/projects/ProjectSettingsDialog.vue'
 import SessionChatPanel from '../features/chat/SessionChatPanel.vue'
 import ChatPanel from '../features/chat/pure/ChatPanel.vue'
 import NewSessionPanel from '../features/chat/composer/NewSessionPanel.vue'
@@ -92,14 +94,14 @@ describe('three-pane app shell', () => {
     expect(tabs).toHaveLength(0)
   })
 
-  it('opens /projects/:projectId/settings as its own tab', async () => {
-    const { wrapper, router } = await setup('/projects/1/settings')
+  it('opens /projects/:projectId/settings as a dialog', async () => {
+    const { wrapper } = await setup('/projects/1/settings')
 
-    expect(router.currentRoute.value.name).toBe('project-settings')
-    expect(wrapper.find('[data-tab-key="project-settings:1"]').exists()).toBe(true)
+    expect(wrapper.findComponent(ProjectSettingsDialog).props('visible')).toBe(true)
+    expect(wrapper.findComponent(ProjectSettingsDialog).props('projectId')).toBe(1)
   })
 
-  it('opens one projects-management tab however often it is visited', async () => {
+  it('opens projects-management as a dialog', async () => {
     const { wrapper, router } = await setup('/projects/1/sessions/sess-1', {
       SessionChatPanel: true,
     })
@@ -107,13 +109,10 @@ describe('three-pane app shell', () => {
 
     await router.push({ name: 'projects-management' })
     await flushPromises()
-    await router.push({ name: 'home' })
-    await flushPromises()
-    await router.push({ name: 'projects-management' })
-    await flushPromises()
 
+    expect(wrapper.findComponent(ProjectsManagementDialog).props('visible')).toBe(true)
     const keys = wrapper.findAll('[data-test="open-tab"]').map((tab) => tab.attributes('data-tab-key'))
-    expect(keys).toEqual(['sess-1', 'projects-management'])
+    expect(keys).toEqual(['sess-1'])
   })
 
   it('redirects the old project URL to the workbench', async () => {
@@ -223,7 +222,7 @@ describe('three-pane app shell', () => {
     const { wrapper, router } = await setup('/projects/1/sessions/sess-1', {
       SessionChatPanel: true,
     })
-    await router.push({ name: 'projects-management' })
+    await router.push('/projects/1/sessions/sess-2')
     await flushPromises()
     expect(wrapper.findAll('[data-test="open-tab"]')).toHaveLength(2)
 
@@ -397,10 +396,10 @@ describe('three-pane app shell', () => {
     expect(dockControls.find('[data-test="sidebar-pin-btn"]').exists()).toBe(true)
     expect(dockControls.find('[data-test="sidebar-collapse-btn"]').exists()).toBe(true)
 
-    // Clicking settings button navigates to projects-management route
+    // Clicking settings button opens projects-management dialog
     await settingsBtn.trigger('click')
     await flushPromises()
-    expect(wrapper.vm.$route.name).toBe('projects-management')
+    expect(wrapper.findComponent(ProjectsManagementDialog).props('visible')).toBe(true)
   })
 
   it('keeps one shared sidebar head whose title follows the active column', async () => {

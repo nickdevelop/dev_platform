@@ -34,13 +34,22 @@ import ComposerCommentCards from './ComposerCommentCards.vue'
 import WorkspacePreviewPane, { type OpenFileTab } from '../pane/WorkspacePreviewPane.vue'
 import QuickFileSearchDialog from '../pane/QuickFileSearchDialog.vue'
 import { useActivityPane } from '../pane/useActivityPane'
+import { useWorkspaceDockStore } from '../../../stores/workspaceDock'
 import { buildCodeCommentsMessage } from '../../../shared/utils/codeCommentBlock'
 import type { CodeCommentCard } from '../../files/types'
 import ImagePreviewModal from '../rendering/ImagePreviewModal.vue'
 import { useAttachmentUploader } from './useAttachmentUploader'
 import { useComposerKeyboard } from './useComposerKeyboard'
 
-const props = defineProps<{ projectId?: number }>()
+const props = withDefaults(
+  defineProps<{
+    projectId?: number
+    hideSideRail?: boolean
+  }>(),
+  {
+    hideSideRail: false,
+  },
+)
 
 const emit = defineEmits<{
   created: [sessionId: string, projectId?: number]
@@ -54,6 +63,7 @@ const worktreesStore = useWorktreesStore()
 const promptsStore = usePromptsStore()
 const draftsStore = useDraftsStore()
 const groupsStore = useGroupsStore()
+const workspaceDock = useWorkspaceDockStore()
 const router = useRouter()
 const route = useRoute()
 
@@ -129,6 +139,16 @@ const textareaPlaceholder = computed(() => {
 const selectedProjectId = ref<number | null>(initialProjectId)
 const selectedWorktreeId = ref<number>(initialDraft.worktreeId ?? 0)
 
+watch(
+  [selectedProjectId, selectedWorktreeId],
+  ([pId, wtId]) => {
+    if (pId !== null) {
+      workspaceDock.setSessionScope(Number(pId), wtId ?? 0)
+    }
+  },
+  { immediate: true },
+)
+
 const selectedProject = computed(() =>
   selectedProjectId.value === null ? undefined : projectsStore.byId(Number(selectedProjectId.value)),
 )
@@ -193,6 +213,18 @@ function openFileInPreview(
   const reqCommit = options?.commitRef
   const reqMsg = options?.commitMessage
   const reqLine = options?.initialLine
+
+  if (selectedProjectId.value !== null) {
+    workspaceDock.openFile({
+      projectId: Number(selectedProjectId.value),
+      worktreeId: selectedWorktreeId.value,
+      path: cleanPath,
+      mode: reqMode,
+      commitRef: reqCommit,
+      commitMessage: reqMsg,
+      initialLine: reqLine,
+    })
+  }
 
   const existing = openFileTabs.value.find((f) => f.path === cleanPath)
   if (existing) {
@@ -1169,7 +1201,7 @@ async function createSession() {
 
     <!-- Column 2: Unified Right Workspace Panel (FileTree and Previews as Tabs) -->
     <WorkspacePreviewPane
-      v-if="selectedProjectId !== null"
+      v-if="!props.hideSideRail && selectedProjectId !== null"
       :project-id="Number(selectedProjectId)"
       :worktree-id="selectedWorktreeId"
       :preview-collapsed="previewCollapsed"
@@ -1189,7 +1221,7 @@ async function createSession() {
     />
 
     <QuickFileSearchDialog
-      v-if="selectedProjectId !== null"
+      v-if="!props.hideSideRail && selectedProjectId !== null"
       :open="quickFileSearchOpen"
       :project-id="Number(selectedProjectId)"
       :worktree-id="selectedWorktreeId"

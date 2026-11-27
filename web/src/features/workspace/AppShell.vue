@@ -24,7 +24,11 @@ import { setOpenTabsTrimGuard } from '../../stores/openTabs'
 import { useFileTreeStateStore } from '../../stores/fileTreeState'
 import CategoryRail from './CategoryRail.vue'
 import ProjectManageDialog from '../projects/ProjectManageDialog.vue'
+import ProjectsManagementDialog from '../projects/ProjectsManagementDialog.vue'
+import ProjectSettingsDialog from '../projects/ProjectSettingsDialog.vue'
 import ProjectSidebar from '../projects/ProjectSidebar.vue'
+import WorkspaceDockPanel from './WorkspaceDockPanel.vue'
+import { useWorkspaceDockStore } from '../../stores/workspaceDock'
 import SessionTabs from './SessionTabs.vue'
 import TasksSidebar from '../tasks/TasksSidebar.vue'
 import OrgSidebar from '../organization/OrgSidebar.vue'
@@ -53,6 +57,20 @@ const drafts = useDraftsStore()
 const chats = useChatsStore()
 const debug = useDebugPanelStore()
 const projectTerminal = useProjectTerminalStore()
+const workspaceDock = useWorkspaceDockStore()
+
+function onAddCodeCommentFromDock(card: any) {
+  if (sessionId.value) {
+    const existing = drafts.getSessionDraft(sessionId.value)
+    const cards = existing.commentCards ? [...existing.commentCards, card] : [card]
+    drafts.setSessionDraft(sessionId.value, { commentCards: cards })
+  } else if (newSessionRoute.value) {
+    const pId = projectId.value ?? drafts.newSessionDraft.projectId
+    const existing = drafts.getNewSessionDraft(pId)
+    const cards = existing.commentCards ? [...existing.commentCards, card] : [card]
+    drafts.setNewSessionDraft({ commentCards: cards }, pId)
+  }
+}
 
 // Protect tabs whose session is mid-turn from automatic capacity trimming:
 // trimming would call sessions.unsubscribe below and tear down a live SSE
@@ -65,6 +83,9 @@ setOpenTabsTrimGuard(
 
 const ready = ref(false)
 const dialog = ref<{ kind: DialogKind } | null>(null)
+const projectsManagementOpen = ref(false)
+const projectSettingsOpen = ref(false)
+const targetProjectSettingsId = ref<number | null>(null)
 
 // The middle column (project tree, task list or settings menu) can be pinned (docked)
 // or floating (unpinned/drawer), and can be collapsed from the dock controls or rail.
@@ -222,9 +243,7 @@ const workspaceTabs = computed(() =>
   openTabs.tabs.filter(
     (entry) =>
       entry.kind === 'session' ||
-      entry.kind === 'new-session' ||
-      entry.kind === 'projects-management' ||
-      entry.kind === 'project-settings',
+      entry.kind === 'new-session',
   ),
 )
 
@@ -237,10 +256,6 @@ const chatTabs = computed(() =>
 
 const activeKey = computed<string | null>(() => {
   if (!projectActive.value) return null
-  if (projectsManagementRoute.value) return 'projects-management'
-  if (projectSettingsRoute.value && projectId.value !== null) {
-    return `project-settings:${projectId.value}`
-  }
   if (newSessionRoute.value) return 'new-session'
   return sessionId.value
 })
@@ -292,6 +307,7 @@ function onAppShellKeydown(e: KeyboardEvent) {
   if (e.altKey && (e.key === '2' || e.code === 'Digit2')) {
     e.preventDefault()
     e.stopPropagation()
+    workspaceDock.setPreviewCollapsed(!workspaceDock.previewCollapsed)
     setPreviewCollapsed(!previewCollapsed.value)
     return
   }
@@ -344,11 +360,13 @@ function syncTabWithRoute() {
       return
     }
     if (projectsManagementRoute.value) {
-      openTabs.openProjectsManagement()
+      projectsManagementOpen.value = true
+      void router.replace({ name: 'home' })
       return
     }
     if (projectSettingsRoute.value && projectId.value !== null) {
-      openTabs.openProjectSettings(projectId.value)
+      openProjectSettings(projectId.value)
+      void router.replace({ name: 'home' })
       return
     }
     if (projectId.value === null) return
@@ -428,14 +446,6 @@ const runningChatIds = computed<string[]>(() =>
 
 function selectTab(tab: OpenTab) {
   openTabs.setActiveKey(tabKey(tab))
-  if (tab.kind === 'projects-management') {
-    void router.push({ name: 'projects-management' })
-    return
-  }
-  if (tab.kind === 'project-settings') {
-    void router.push({ name: 'project-settings', params: { projectId: String(tab.projectId) } })
-    return
-  }
   if (tab.kind === 'new-session') {
     const draft = drafts.newSessionDraft
     if (draft.projectId) {
@@ -580,15 +590,16 @@ function togglePinTab(tab: OpenTab) {
   openTabs.togglePin(tabKey(tab))
 }
 
-// The gear in a project row opens that project's settings tab. Project
+// The gear in a project row opens that project's settings dialog. Project
 // configuration (rename, git worktrees) lives there; the projects management
-// page keeps ordering, visibility and unregister.
+// dialog keeps ordering, visibility and unregister.
 function openProjectSettings(id: number) {
-  void router.push({ name: 'project-settings', params: { projectId: String(id) } })
+  targetProjectSettingsId.value = id
+  projectSettingsOpen.value = true
 }
 
 function onOpenProjectsManagement() {
-  void router.push({ name: 'projects-management' })
+  projectsManagementOpen.value = true
 }
 
 function openSessionTab(id: number, sessionId: string) {
@@ -769,38 +780,63 @@ watch(
     </aside>
 
     <section class="pane" :class="{ 'pane-full': fullHeightPane }">
-      <SessionTabs
-        v-if="projectActive && workspaceTabs.length > 0"
-        :tabs="workspaceTabs"
-        :active-key="activeKey"
-        :project-names="projectNames"
-        :running-session-ids="runningSessionIds"
-        @select="selectTab"
-        @close="closeTab"
-        @toggle-pin="togglePinTab"
-        @close-others="closeOtherTabs"
-        @close-all="closeAllTabs"
-        @new-tab="onNewTab"
-      />
-      <div class="pane-body">
-        <p v-if="projects.error" class="page-error" role="alert">{{ projects.error }}</p>
-        <p v-else-if="projectId !== null && !ready" class="loading">加载中…</p>
-        <div v-else-if="missingProject" class="missing">
-          <p>项目不存在或已移除。</p>
-          <RouterLink :to="{ name: 'home' }">返回</RouterLink>
+      <div v-if="projectActive" class="workbench-dual-pane">
+        <div class="workbench-left-column">
+          <SessionTabs
+            v-if="workspaceTabs.length > 0"
+            :tabs="workspaceTabs"
+            :active-key="activeKey"
+            :project-names="projectNames"
+            :running-session-ids="runningSessionIds"
+            @select="selectTab"
+            @close="closeTab"
+            @toggle-pin="togglePinTab"
+            @close-others="closeOtherTabs"
+            @close-all="closeAllTabs"
+            @new-tab="onNewTab"
+          />
+          <div class="pane-body">
+            <p v-if="projects.error" class="page-error" role="alert">{{ projects.error }}</p>
+            <p v-else-if="projectId !== null && !ready" class="loading">加载中…</p>
+            <div v-else-if="missingProject" class="missing">
+              <p>项目不存在或已移除。</p>
+              <RouterLink :to="{ name: 'home' }">返回</RouterLink>
+            </div>
+            <RouterView v-else v-slot="{ Component }">
+              <KeepAlive :max="10">
+                <component
+                  :is="Component"
+                  v-if="Component"
+                  :key="route.fullPath"
+                  :hide-side-rail="true"
+                  @manage="openManage"
+                  @created="onCreated"
+                />
+              </KeepAlive>
+            </RouterView>
+          </div>
         </div>
-        <RouterView v-else v-slot="{ Component }">
-          <KeepAlive :max="10">
-            <component
-              :is="Component"
-              v-if="Component"
-              :key="route.fullPath"
-              @manage="openManage"
-              @created="onCreated"
-            />
-          </KeepAlive>
-        </RouterView>
+
+        <WorkspaceDockPanel
+          @add-comment="onAddCodeCommentFromDock"
+        />
       </div>
+
+      <template v-else>
+        <div class="pane-body">
+          <RouterView v-slot="{ Component }">
+            <KeepAlive :max="10">
+              <component
+                :is="Component"
+                v-if="Component"
+                :key="route.fullPath"
+                @manage="openManage"
+                @created="onCreated"
+              />
+            </KeepAlive>
+          </RouterView>
+        </div>
+      </template>
     </section>
 
     <ProjectManageDialog
@@ -808,6 +844,16 @@ watch(
       :kind="dialog.kind"
       @close="dialog = null"
       @submitted="onSubmitted"
+    />
+
+    <ProjectsManagementDialog
+      v-model:visible="projectsManagementOpen"
+      @open-settings="openProjectSettings"
+    />
+
+    <ProjectSettingsDialog
+      v-model:visible="projectSettingsOpen"
+      :project-id="targetProjectSettingsId"
     />
 
     <QuickAssistantLauncher />
@@ -1112,6 +1158,25 @@ watch(
      top and stretches the full width, while the body below is the scroller. */
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+}
+
+.workbench-dual-pane {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+.workbench-left-column {
+  flex: 1;
+  min-width: 320px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
   overflow: hidden;
 }
 

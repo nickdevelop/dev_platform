@@ -49,8 +49,7 @@ const projectDestination = computed(() => {
   const workspaceTabs = openTabs.tabs.filter(
     (tab) =>
       tab.kind === 'session' ||
-      tab.kind === 'new-session' ||
-      tab.kind === 'projects-management',
+      tab.kind === 'new-session',
   )
   if (workspaceTabs.length > 0) {
     const preferred =
@@ -62,9 +61,6 @@ const projectDestination = computed(() => {
           )
         : null) ?? workspaceTabs[workspaceTabs.length - 1]
 
-    if (preferred.kind === 'projects-management') {
-      return { name: 'projects-management' }
-    }
     if (preferred.kind === 'new-session') {
       const draft = draftsStore.newSessionDraft
       if (draft.projectId) {

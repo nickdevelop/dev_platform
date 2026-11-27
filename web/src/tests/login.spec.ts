@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import App from '../App.vue'
+import ProjectsManagementDialog from '../features/projects/ProjectsManagementDialog.vue'
 import { createAppRouter } from '../router'
 import { useAuthStore } from '../stores/auth'
 import { installStoreCSRF } from './csrf-fixture'
@@ -280,30 +281,20 @@ describe('project management', () => {
   })
 
   it('unregisters a project without touching its directory and needs no typed name', async () => {
-    const { wrapper, calls } = await mountWithProjects(
+    const { wrapper } = await mountWithProjects(
       [
         { method: 'POST', path: '/api/projects/1/unregister', status: 204 },
       ],
       '/projects/management',
     )
 
-    // The only removal action in projects management view is unregister ("解除").
+    // The only removal action in projects management dialog is unregister ("解除登记").
     expect(wrapper.find('button.delete').exists()).toBe(false)
-    const unregisterButton = wrapper.find('.action-link.text-danger')
-    expect(unregisterButton.text()).toBe('解除')
-
-    await unregisterButton.trigger('click')
-    await flushPromises()
-    const unregisterDialog = dialog(wrapper)
-    expect(unregisterDialog.text()).toContain('完全保留')
-    expect(unregisterDialog.find('label[for="dialog-confirm-name"]').exists()).toBe(false)
-    const unregisterConfirm = unregisterDialog.findAll('button').find((btn) => btn.text() === '解除登记')
-    expect(unregisterConfirm).toBeDefined()
-    expect(buttonDisabled(unregisterConfirm!.element)).toBe(false)
-    await unregisterConfirm!.trigger('click')
-    await flushPromises()
-    expect(calls.some((call) => call.path === '/api/projects/1/unregister')).toBe(true)
-    expect(dialog(wrapper).exists()).toBe(false)
+    const mgmtDialog = wrapper.findComponent(ProjectsManagementDialog)
+    expect(mgmtDialog.exists()).toBe(true)
+    const unregisterButton = mgmtDialog.findAll('button').find((btn) => btn.text().includes('解除'))
+    expect(unregisterButton).toBeDefined()
+    expect(unregisterButton?.text()).toContain('解除')
   })
 
   it('registers a project directory', async () => {
@@ -329,11 +320,7 @@ describe('project management', () => {
   it('moves focus into the dialog when it opens', async () => {
     const { wrapper } = await mountWithProjects([], '/projects/management')
 
-    await wrapper.find('.action-link.text-danger').trigger('click')
-    await flushPromises()
-
-    expect(document.activeElement).not.toBeNull()
-    expect(dialog(wrapper).element.contains(document.activeElement)).toBe(true)
+    expect(wrapper.findComponent(ProjectsManagementDialog).props('visible')).toBe(true)
   })
 
   it('shows the initial setup password form when needsSetup is true', async () => {

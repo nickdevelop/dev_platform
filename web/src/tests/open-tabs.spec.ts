@@ -24,9 +24,9 @@ describe('open tabs store', () => {
 
   it('gives each kind its own key', () => {
     const session: OpenTab = { kind: 'session', projectId: 3, sessionId: 'ses-1', title: 'x' }
-    const settings: OpenTab = { kind: 'projects-management' }
+    const settings: OpenTab = { kind: 'platform-settings' }
     expect(tabKey(session)).toBe('ses-1')
-    expect(tabKey(settings)).toBe('projects-management')
+    expect(tabKey(settings)).toBe('platform-settings')
   })
 
   it('opens one new-session tab however often its routes are visited', () => {
@@ -96,29 +96,21 @@ describe('open tabs store', () => {
     expect(reloaded.preferredTab ? tabKey(reloaded.preferredTab) : null).toBe('task:5')
   })
 
-  it('opens one projects-management tab, whatever the user clicks', () => {
-    const store = freshStore()
-    store.openProjectsManagement()
-    store.openProjectsManagement()
-    expect(store.tabs).toHaveLength(1)
-    expect(store.tabs[0]).toEqual({ kind: 'projects-management' })
-  })
-
   it('keeps sessions and settings side by side in opening order', () => {
     const store = freshStore()
     store.openTab(3, 'ses-1', 'first')
-    store.openProjectsManagement()
+    store.openPlatformSettings()
     store.openTab(3, 'ses-2', 'second')
 
-    expect(store.tabs.map(tabKey)).toEqual(['ses-1', 'projects-management', 'ses-2'])
+    expect(store.tabs.map(tabKey)).toEqual(['ses-1', 'platform-settings', 'ses-2'])
   })
 
   it('closes by key for either kind, and by session id for sessions', () => {
     const store = freshStore()
     store.openTab(3, 'ses-1', 'first')
-    store.openProjectsManagement()
+    store.openPlatformSettings()
 
-    store.closeTabByKey('projects-management')
+    store.closeTabByKey('platform-settings')
     expect(store.tabs.map(tabKey)).toEqual(['ses-1'])
 
     store.openPlatformSettings()
@@ -128,10 +120,10 @@ describe('open tabs store', () => {
 
   it('moves a settings tab to the front when it is opened again', () => {
     const store = freshStore()
-    store.openProjectsManagement()
+    store.openPlatformSettings()
     store.openTab(3, 'ses-1', 'first')
-    store.openProjectsManagement()
-    expect(store.tabs.map(tabKey)).toEqual(['ses-1', 'projects-management'])
+    store.openPlatformSettings()
+    expect(store.tabs.map(tabKey)).toEqual(['ses-1', 'platform-settings'])
   })
 
   it('migrates the tabs a previous version stored', () => {
@@ -186,10 +178,10 @@ describe('open tabs store', () => {
   it('restores what it persisted, and ignores a corrupt store', () => {
     const store = freshStore()
     store.openTab(3, 'ses-1', 'first')
-    store.openProjectsManagement()
+    store.openPlatformSettings()
 
     const reloaded = freshStore()
-    expect(reloaded.tabs.map(tabKey)).toEqual(['ses-1', 'projects-management'])
+    expect(reloaded.tabs.map(tabKey)).toEqual(['ses-1', 'platform-settings'])
 
     localStorage.setItem('dev-platform-open-tabs-v2', 'not json at all')
     expect(freshStore().tabs).toEqual([])
@@ -198,26 +190,26 @@ describe('open tabs store', () => {
   it('renames a session tab without touching the settings tab', () => {
     const store = freshStore()
     store.openTab(3, 'ses-1', '')
-    store.openProjectsManagement()
+    store.openPlatformSettings()
     store.updateTitle('ses-1', 'now titled')
 
     expect(store.tabs[0]).toEqual({ kind: 'session', projectId: 3, sessionId: 'ses-1', title: 'now titled' })
-    expect(store.tabs[1]).toEqual({ kind: 'projects-management' })
+    expect(store.tabs[1]).toEqual({ kind: 'platform-settings' })
   })
 
   it('pins a tab to the front and spares it from bulk closes', () => {
     const store = freshStore()
     store.openTab(3, 'ses-1', 'first')
     store.openTab(3, 'ses-2', 'second')
-    store.openProjectsManagement()
+    store.openPlatformSettings()
 
     store.pinTab('ses-2')
-    expect(store.tabs.map(tabKey)).toEqual(['ses-2', 'ses-1', 'projects-management'])
+    expect(store.tabs.map(tabKey)).toEqual(['ses-2', 'ses-1', 'platform-settings'])
     expect(store.tabs[0].pinned).toBe(true)
 
     // Closing the others keeps the named tab and the pinned one.
     const closed = store.closeOtherTabsByKey('ses-1')
-    expect(closed.map(tabKey)).toEqual(['projects-management'])
+    expect(closed.map(tabKey)).toEqual(['platform-settings'])
     expect(store.tabs.map(tabKey)).toEqual(['ses-2', 'ses-1'])
 
     // Closing all keeps only the pinned tab.
