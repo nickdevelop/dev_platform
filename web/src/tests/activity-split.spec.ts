@@ -723,25 +723,7 @@ describe('three-column chat layout with preview tabs and file tree drawer', () =
     expect(preview.find('[data-test="filetree-drawer"]').isVisible()).toBe(true)
   })
 
-  it('closes the active file tab with Alt+W and falls back to the file tree tab', async () => {
-    localStorage.setItem('dev-platform-activity-pane-v1', 'expanded')
-    const wrapper = await mountPanel()
-    const sidebar = wrapper.findComponent(FileSidebar)
-
-    sidebar.vm.$emit('select', 'src/main.go')
-    await flushPromises()
-
-    const preview = wrapper.find('[data-test="activity-pane"]')
-    expect(preview.findAll('[data-test="tab-file"]').length).toBe(1)
-
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'w', altKey: true }))
-    await flushPromises()
-
-    expect(preview.findAll('[data-test="tab-file"]').length).toBe(0)
-    expect(preview.find('[data-test="tab-filetree"]').classes()).toContain('is-active')
-  })
-
-  it('Alt+W on a dirty file tab asks for confirmation before discarding', async () => {
+  it('closing a dirty file tab asks for confirmation before discarding', async () => {
     const confirmSpy = vi.spyOn(ElMessageBox, 'confirm').mockRejectedValue(new Error('cancel'))
     localStorage.setItem('dev-platform-activity-pane-v1', 'expanded')
     const wrapper = await mountPanel()
@@ -757,7 +739,7 @@ describe('three-column chat layout with preview tabs and file tree drawer', () =
     expect(preview.find('[data-test="tab-dirty-dot"]').exists()).toBe(true)
 
     // Cancel the discard confirmation → tab stays open
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'w', altKey: true }))
+    await preview.find('[data-test="close-file-tab"]').trigger('click')
     await flushPromises()
     expect(confirmSpy).toHaveBeenCalled()
     expect(preview.findAll('[data-test="tab-file"]').length).toBe(1)
@@ -765,7 +747,7 @@ describe('three-column chat layout with preview tabs and file tree drawer', () =
     // Confirm the discard → tab closes
     confirmSpy.mockReset()
     confirmSpy.mockResolvedValue('confirm' as never)
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'w', altKey: true }))
+    await preview.find('[data-test="close-file-tab"]').trigger('click')
     await flushPromises()
     expect(preview.findAll('[data-test="tab-file"]').length).toBe(0)
 

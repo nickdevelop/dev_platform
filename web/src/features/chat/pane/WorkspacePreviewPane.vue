@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onActivated, onDeactivated, onMounted, onUnmounted, ref } from 'vue'
+import { ref } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { FileSidebar, FileViewer } from '../../files'
 import type { CodeCommentCard } from '../../files/types'
@@ -55,7 +55,7 @@ function handleDirtyChange(path: string, dirty: boolean) {
   }
 }
 
-// All file-tab close paths (× button, middle click, Alt+W) funnel through here
+// All file-tab close paths (× button, middle click) funnel through here
 // so unsaved drafts always get a discard confirmation before the tab goes away.
 async function requestCloseTab(path: string, event?: MouseEvent) {
   event?.stopPropagation()
@@ -78,39 +78,6 @@ async function requestCloseTab(path: string, event?: MouseEvent) {
   }
   emit('close-tab', path)
 }
-
-// Alt+W closes the active file preview tab. A dedicated chord instead of VSCode's
-// Ctrl+W: browsers reserve Ctrl+W (closes the whole page tab, page JS cannot
-// preventDefault it), so Alt+W is the conflict-free equivalent.
-// KeepAlive keeps background session panes mounted, so their window listeners
-// must stay silent: only the activated instance reacts.
-let isDeactivated = false
-
-onActivated(() => {
-  isDeactivated = false
-})
-
-onDeactivated(() => {
-  isDeactivated = true
-})
-
-function onKeydown(e: KeyboardEvent) {
-  if (isDeactivated) return
-  if (props.previewCollapsed || props.hideSideRail) return
-  if (!e.altKey || e.ctrlKey || e.metaKey || e.key.toLowerCase() !== 'w') return
-  if (props.activePreviewTab === props.fileTreeTabKey) return
-  if (!props.openFileTabs.some((t) => t.path === props.activePreviewTab)) return
-  e.preventDefault()
-  void requestCloseTab(props.activePreviewTab)
-}
-
-onMounted(() => {
-  window.addEventListener('keydown', onKeydown)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('keydown', onKeydown)
-})
 </script>
 
 <template>
