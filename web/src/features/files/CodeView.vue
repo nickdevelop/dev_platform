@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import * as monaco from 'monaco-editor'
-import { ElMessageBox } from 'element-plus'
 import { ensureMonacoEnvironment, resolveMonacoLanguage } from './monaco/env'
 import { applyMonacoTheme, getMonacoFontFamily, getMonacoFontSize } from './monaco/theme'
 import { useSettingsStore } from '../../stores/settings'
@@ -43,11 +42,11 @@ try {
 const editorContainerRef = ref<HTMLElement | null>(null)
 const wrapLines = ref(true)
 
-// Direct file editing state
-const isEditing = ref(false)
+// Direct editing (always-on when `editable`): no edit-mode toggle, the model is
+// the draft and dirty state is a plain comparison against the persisted content.
 const draftContent = ref(props.content)
 
-const isDirty = computed(() => isEditing.value && draftContent.value !== props.content)
+const isDirty = computed(() => props.editable && draftContent.value !== props.content)
 
 watch(isDirty, (dirty) => {
   emit('dirty-change', dirty)
@@ -106,54 +105,8 @@ function applyFocusedLine(lineNumber?: number) {
   ])
 }
 
-function startEditing() {
-  if (!props.editable) return
-  draftContent.value = props.content
-  isEditing.value = true
-  closeInlineCommentEditor()
-  editorInstance?.updateOptions({ readOnly: false })
-  void nextTick(() => {
-    editorInstance?.focus()
-  })
-}
-
-async function requestExitEditing() {
-  if (props.saving) return
-  if (isDirty.value) {
-    try {
-      await ElMessageBox.confirm(
-        '当前文件有尚未保存的修改，确定要放弃这些修改并退出编辑吗？',
-        '放弃未保存的修改',
-        {
-          confirmButtonText: '放弃修改',
-          cancelButtonText: '继续编辑',
-          confirmButtonClass: 'el-button--danger',
-          type: 'warning',
-        },
-      )
-      confirmDiscardAndExit()
-    } catch {
-      // Cancelled by user
-    }
-    return
-  }
-  confirmDiscardAndExit()
-}
-
-function confirmDiscardAndExit() {
-  isEditing.value = false
-  draftContent.value = props.content
-  if (modelInstance && modelInstance.getValue() !== props.content) {
-    syncingFromProps = true
-    modelInstance.setValue(props.content)
-    syncingFromProps = false
-  }
-  editorInstance?.updateOptions({ readOnly: true })
-  emit('dirty-change', false)
-}
-
 function saveEdits() {
-  if (!isEditing.value || props.saving) return
+  if (!props.editable || props.saving) return
   emit('save', draftContent.value)
 }
 
@@ -208,9 +161,17 @@ function onInlineEditorKeydown(e: KeyboardEvent) {
 }
 
 function onContainerKeydown(e: KeyboardEvent) {
-  if (isEditing.value && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
     e.preventDefault()
     saveEdits()
+    return
+  }
+  // Alt+Z toggles word wrap (VSCode habit). Bound on the container instead of
+  // monaco's addCommand: monaco has no Alt+Z binding so keydowns bubble here,
+  // and a single handler avoids a double toggle cancelling itself out.
+  if (e.altKey && !e.ctrlKey && !e.metaKey && e.key.toLowerCase() === 'z') {
+    e.preventDefault()
+    toggleWrap()
   }
 }
 
@@ -225,7 +186,7 @@ onMounted(() => {
   editorInstance = monaco.editor.create(editorContainerRef.value, {
     model: modelInstance,
     theme: themeName,
-    readOnly: !isEditing.value,
+    readOnly: !props.editable,
     automaticLayout: true,
     wordWrap: wrapLines.value ? 'on' : 'off',
     lineNumbers: props.showLineNumbers ? 'on' : 'off',
@@ -287,10 +248,8 @@ onMounted(() => {
 watch(
   () => props.filePath,
   () => {
-    isEditing.value = false
     draftContent.value = props.content
     closeInlineCommentEditor()
-    editorInstance?.updateOptions({ readOnly: true })
     if (modelInstance) {
       monaco.editor.setModelLanguage(modelInstance, languageId.value)
       if (modelInstance.getValue() !== props.content) {
@@ -305,15 +264,16 @@ watch(
 
 watch(
   () => props.content,
-  (nextContent) => {
-    if (!isEditing.value) {
-      draftContent.value = nextContent
-      if (modelInstance && modelInstance.getValue() !== nextContent) {
+  (nextContent, prevContent) => {
+    // Never clobber unsaved local edits; adopt external content only when the
+    // draft still matches the previous persisted content (i.e. clean).
+    if (draftContent.value !== prevContent) return
+    draftContent.value = nextContent
+    if (modelInstance && modelInstance.getValue() !== nextContent) {
         syncingFromProps = true
         modelInstance.setValue(nextContent)
         syncingFromProps = false
       }
-    }
   },
 )
 
@@ -357,69 +317,21 @@ onUnmounted(() => {
 
 <template>
   <div class="code-view" data-test="code-view" @keydown="onContainerKeydown">
-    <!-- Quick action buttons -->
+    <!-- Floating status chips (readonly / unsaved); editing is always on and
+         saving goes through Ctrl+S, wrapping through Alt+Z — no buttons. -->
     <div class="code-actions">
       <span
-        v-if="props.readonlyReason && !isEditing"
+        v-if="props.readonlyReason"
         class="readonly-badge"
         :title="props.readonlyReason"
         data-test="code-readonly-badge"
       >
         只读
       </span>
-      <button
-        v-if="props.editable && !isEditing"
-        type="button"
-        class="action-btn"
-        title="直接编辑文件"
-        data-test="code-edit-btn"
-        @click="startEditing"
-      >
-        <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6">
-          <path d="M11.5 2.5a1.5 1.5 0 0 1 2.1 2.1L5.2 13l-2.9.7.7-2.9 8.5-8.3z" />
-        </svg>
-        <span>编辑</span>
-      </button>
-      <template v-if="isEditing">
-        <span v-if="isDirty" class="dirty-badge" data-test="code-dirty-badge">未保存</span>
-        <button
-          type="button"
-          class="action-btn is-primary"
-          :disabled="props.saving || !isDirty"
-          title="保存修改 (Ctrl+S)"
-          data-test="code-save-btn"
-          @click="saveEdits"
-        >
-          <span>{{ props.saving ? '保存中…' : '保存' }}</span>
-        </button>
-        <button
-          type="button"
-          class="action-btn"
-          :disabled="props.saving"
-          title="退出编辑"
-          data-test="code-cancel-btn"
-          @click="requestExitEditing"
-        >
-          <span>退出</span>
-        </button>
-      </template>
-      <button
-        type="button"
-        class="action-btn"
-        :class="{ 'is-active': wrapLines }"
-        :title="wrapLines ? '关闭自动换行' : '开启自动换行'"
-        data-test="toggle-wrap-btn"
-        @click="toggleWrap"
-      >
-        <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.8">
-          <polyline points="10 9 13 12 10 15" />
-          <path d="M3 4h10v5H4" />
-        </svg>
-        <span>换行</span>
-      </button>
+      <span v-if="isDirty" class="dirty-badge" data-test="code-dirty-badge">未保存</span>
     </div>
 
-    <div v-if="isEditing && props.saveError" class="save-error-banner" role="alert" data-test="code-save-error">
+    <div v-if="props.saveError" class="save-error-banner" role="alert" data-test="code-save-error">
       {{ props.saveError }}
     </div>
 
@@ -532,51 +444,6 @@ onUnmounted(() => {
   z-index: 5;
   display: flex;
   gap: 6px;
-}
-
-.action-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  height: 24px;
-  padding: 0 8px;
-  border-radius: var(--radius);
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
-  color: var(--color-text-muted);
-  font-size: var(--text-size-11);
-  font-family: var(--font-family);
-  cursor: pointer;
-  transition: color 0.12s ease, border-color 0.12s ease, background-color 0.12s ease;
-}
-
-.action-btn:hover:not(:disabled) {
-  color: var(--color-text);
-  border-color: var(--color-border-strong);
-  background: var(--color-surface-muted);
-}
-
-.action-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.action-btn.is-active {
-  color: var(--color-primary);
-  border-color: var(--color-primary);
-  background: var(--color-primary-soft);
-}
-
-.action-btn.is-primary {
-  background: var(--color-primary);
-  border-color: var(--color-primary);
-  color: var(--color-on-primary);
-}
-
-.action-btn.is-primary:hover:not(:disabled) {
-  background: var(--color-primary-hover);
-  border-color: var(--color-primary-hover);
-  color: var(--color-on-primary);
 }
 
 .readonly-badge,

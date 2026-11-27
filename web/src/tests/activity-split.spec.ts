@@ -4,6 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
+import { ElMessageBox } from 'element-plus'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import MessageView from '../features/chat/rendering/MessageView.vue'
 import SessionChatPanel from '../features/chat/SessionChatPanel.vue'
@@ -720,6 +721,55 @@ describe('three-column chat layout with preview tabs and file tree drawer', () =
     const filetreeTab = preview.find('[data-test="tab-filetree"]')
     expect(filetreeTab.classes()).toContain('is-active')
     expect(preview.find('[data-test="filetree-drawer"]').isVisible()).toBe(true)
+  })
+
+  it('closes the active file tab with Alt+W and falls back to the file tree tab', async () => {
+    localStorage.setItem('dev-platform-activity-pane-v1', 'expanded')
+    const wrapper = await mountPanel()
+    const sidebar = wrapper.findComponent(FileSidebar)
+
+    sidebar.vm.$emit('select', 'src/main.go')
+    await flushPromises()
+
+    const preview = wrapper.find('[data-test="activity-pane"]')
+    expect(preview.findAll('[data-test="tab-file"]').length).toBe(1)
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'w', altKey: true }))
+    await flushPromises()
+
+    expect(preview.findAll('[data-test="tab-file"]').length).toBe(0)
+    expect(preview.find('[data-test="tab-filetree"]').classes()).toContain('is-active')
+  })
+
+  it('Alt+W on a dirty file tab asks for confirmation before discarding', async () => {
+    const confirmSpy = vi.spyOn(ElMessageBox, 'confirm').mockRejectedValue(new Error('cancel'))
+    localStorage.setItem('dev-platform-activity-pane-v1', 'expanded')
+    const wrapper = await mountPanel()
+    const sidebar = wrapper.findComponent(FileSidebar)
+
+    sidebar.vm.$emit('select', 'src/main.go')
+    await flushPromises()
+
+    const preview = wrapper.find('[data-test="activity-pane"]')
+    // Mark the open file as dirty through the viewer's dirty-change event
+    preview.findComponent(FileViewer).vm.$emit('dirty-change', 'src/main.go', true)
+    await flushPromises()
+    expect(preview.find('[data-test="tab-dirty-dot"]').exists()).toBe(true)
+
+    // Cancel the discard confirmation → tab stays open
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'w', altKey: true }))
+    await flushPromises()
+    expect(confirmSpy).toHaveBeenCalled()
+    expect(preview.findAll('[data-test="tab-file"]').length).toBe(1)
+
+    // Confirm the discard → tab closes
+    confirmSpy.mockReset()
+    confirmSpy.mockResolvedValue('confirm' as never)
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'w', altKey: true }))
+    await flushPromises()
+    expect(preview.findAll('[data-test="tab-file"]').length).toBe(0)
+
+    confirmSpy.mockRestore()
   })
 
   it('switches between file tree tab and opened file tab seamlessly', async () => {

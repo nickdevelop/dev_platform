@@ -270,11 +270,10 @@ watch(
   () => props.open,
   (isOpen) => {
     if (isOpen) {
-      searchType.value = 'file'
+      // 模式与后缀过滤跨呼出保留（组件内存记忆）：上次用内容搜索、选过后缀，
+      // 下次呼出仍是上次的检索姿态；只清掉一次性输入。
       query.value = ''
-      extFilter.value = ''
       extDraft.value = ''
-      customExts.value = []
       activeIndex.value = 0
       closeMenus()
       void doSearch('')

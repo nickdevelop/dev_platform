@@ -276,6 +276,40 @@ describe('QuickFileSearchDialog', () => {
     expect(wrapper.emitted('select')).toBeUndefined()
   })
 
+  it('remembers the mode and ext filter across close/reopen (in-memory)', async () => {
+    vi.spyOn(projectsApi, 'searchProjectFiles').mockResolvedValue({ files: [] })
+    const contentSpy = vi.spyOn(projectsApi, 'searchProjectContent').mockResolvedValue({ matches: [] })
+    const wrapper = mountDialog({ open: true, projectId: 1 })
+    await flushPromises()
+
+    // 切到内容模式并指定自定义后缀
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }))
+    await wrapper.vm.$nextTick()
+    await wrapper.find<HTMLInputElement>('[data-test="quick-file-search-input"]').setValue('kw')
+    await tick()
+    await flushPromises()
+    await wrapper.find('[data-test="quick-search-ext-btn"]').trigger('click')
+    await wrapper.find<HTMLInputElement>('[data-test="quick-search-ext-input"]').setValue('kt')
+    await wrapper.find('[data-test="quick-search-ext-apply"]').trigger('click')
+    await tick()
+    await flushPromises()
+    expect(contentSpy).toHaveBeenLastCalledWith(1, 'kw', 50, undefined, ['.kt'])
+
+    // 关闭后重新呼出：模式仍是内容，后缀仍是 .kt，输入框已清空
+    await wrapper.setProps({ open: false })
+    await wrapper.setProps({ open: true })
+    await flushPromises()
+    expect(wrapper.find('[data-test="quick-search-type-select"]').text()).toContain('内容')
+    expect(wrapper.find('[data-test="quick-search-ext-btn"]').text()).toContain('*.kt')
+    expect((wrapper.find<HTMLInputElement>('[data-test="quick-file-search-input"]').element as HTMLInputElement).value).toBe('')
+
+    // 内容模式下直接输入，后缀过滤沿用上次的 .kt
+    await wrapper.find<HTMLInputElement>('[data-test="quick-file-search-input"]').setValue('kw2')
+    await tick()
+    await flushPromises()
+    expect(contentSpy).toHaveBeenLastCalledWith(1, 'kw2', 50, undefined, ['.kt'])
+  })
+
   it('navigates with ArrowDown/ArrowUp and selects with Enter', async () => {
     vi.spyOn(projectsApi, 'searchProjectFiles').mockResolvedValueOnce({
       files: [

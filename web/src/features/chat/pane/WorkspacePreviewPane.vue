@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onActivated, onDeactivated, onMounted, onUnmounted, ref } from 'vue'
+import { ElMessageBox } from 'element-plus'
 import { FileSidebar, FileViewer } from '../../files'
 import type { CodeCommentCard } from '../../files/types'
 
@@ -32,7 +33,7 @@ const emit = defineEmits<{
   collapse: [collapsed: boolean]
   'resizer-mousedown': [event: MouseEvent]
   'select-tab': [tabKey: string]
-  'close-tab': [path: string, event: MouseEvent]
+  'close-tab': [path: string, event?: MouseEvent]
   'select-workspace-file': [
     filePath: string,
     options?: { mode?: 'view' | 'diff'; commitRef?: string; commitMessage?: string }
@@ -53,6 +54,63 @@ function handleDirtyChange(path: string, dirty: boolean) {
     dirtyPaths.value = next
   }
 }
+
+// All file-tab close paths (× button, middle click, Alt+W) funnel through here
+// so unsaved drafts always get a discard confirmation before the tab goes away.
+async function requestCloseTab(path: string, event?: MouseEvent) {
+  event?.stopPropagation()
+  if (dirtyPaths.value[path]) {
+    try {
+      await ElMessageBox.confirm(
+        '当前文件有尚未保存的修改，确定要放弃这些修改并关闭标签吗？',
+        '放弃未保存的修改',
+        {
+          confirmButtonText: '放弃修改',
+          cancelButtonText: '继续编辑',
+          confirmButtonClass: 'el-button--danger',
+          type: 'warning',
+        },
+      )
+    } catch {
+      return
+    }
+    delete dirtyPaths.value[path]
+  }
+  emit('close-tab', path)
+}
+
+// Alt+W closes the active file preview tab. A dedicated chord instead of VSCode's
+// Ctrl+W: browsers reserve Ctrl+W (closes the whole page tab, page JS cannot
+// preventDefault it), so Alt+W is the conflict-free equivalent.
+// KeepAlive keeps background session panes mounted, so their window listeners
+// must stay silent: only the activated instance reacts.
+let isDeactivated = false
+
+onActivated(() => {
+  isDeactivated = false
+})
+
+onDeactivated(() => {
+  isDeactivated = true
+})
+
+function onKeydown(e: KeyboardEvent) {
+  if (isDeactivated) return
+  if (props.previewCollapsed || props.hideSideRail) return
+  if (!e.altKey || e.ctrlKey || e.metaKey || e.key.toLowerCase() !== 'w') return
+  if (props.activePreviewTab === props.fileTreeTabKey) return
+  if (!props.openFileTabs.some((t) => t.path === props.activePreviewTab)) return
+  e.preventDefault()
+  void requestCloseTab(props.activePreviewTab)
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', onKeydown)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', onKeydown)
+})
 </script>
 
 <template>
@@ -106,7 +164,7 @@ function handleDirtyChange(path: string, dirty: boolean) {
             :title="fileTab.path"
             data-test="tab-file"
             @click="emit('select-tab', fileTab.path)"
-            @mousedown.middle.prevent="emit('close-tab', fileTab.path, $event)"
+            @mousedown.middle.prevent="requestCloseTab(fileTab.path)"
           >
             <span class="file-tab-name">{{ fileTab.name }}</span>
             <span
@@ -127,7 +185,7 @@ function handleDirtyChange(path: string, dirty: boolean) {
               title="关闭标签"
               aria-label="关闭标签"
               data-test="close-file-tab"
-              @click.stop="emit('close-tab', fileTab.path, $event)"
+              @click.stop="requestCloseTab(fileTab.path, $event)"
             >
               ×
             </button>

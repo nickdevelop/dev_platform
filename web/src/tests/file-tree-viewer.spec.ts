@@ -643,7 +643,7 @@ describe('CodeView.vue', () => {
     wrapper.unmount()
   })
 
-  it('toggles line wrap option', async () => {
+  it('toggles line wrap option with Alt+Z', async () => {
     const content = 'hello world\nfoo bar\nhello universe'
     const wrapper = mount(CodeView, {
       props: { content },
@@ -652,7 +652,9 @@ describe('CodeView.vue', () => {
     const host = wrapper.find('[data-test="monaco-editor-host"]')
     expect(host.attributes('data-monaco-wrap')).toBe('on')
 
-    await wrapper.find('[data-test="toggle-wrap-btn"]').trigger('click')
+    await wrapper
+      .find('[data-test="code-view"]')
+      .trigger('keydown', { key: 'z', altKey: true })
     expect(host.attributes('data-monaco-wrap')).toBe('off')
     wrapper.unmount()
   })
