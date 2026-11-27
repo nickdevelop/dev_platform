@@ -17,6 +17,7 @@ export interface WorkspaceFileTab {
 export interface WorkspaceScope {
   projectId: number
   worktreeId: number
+  sessionId?: string
 }
 
 export const FILE_TREE_TAB_KEY = '__filetree__'
@@ -124,8 +125,8 @@ export const useWorkspaceDockStore = defineStore('workspaceDock', {
   },
 
   actions: {
-    setSessionScope(projectId: number, worktreeId: number = 0) {
-      this.activeScope = { projectId, worktreeId }
+    setSessionScope(projectId: number, worktreeId: number = 0, sessionId?: string) {
+      this.activeScope = { projectId, worktreeId, sessionId }
       if (!this.isLocked) {
         this.lockedScope = null
       }

@@ -9,7 +9,7 @@
 // optional message rides along with the create request and the waiting is
 // visible on this form instead of a frozen composer. On success the shell
 // navigates to the new session.
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useAgentsStore } from '../../../stores/agents'
 import { useProjectsStore } from '../../../stores/projects'
@@ -148,6 +148,12 @@ watch(
   },
   { immediate: true },
 )
+
+onActivated(() => {
+  if (selectedProjectId.value !== null) {
+    workspaceDock.setSessionScope(Number(selectedProjectId.value), selectedWorktreeId.value ?? 0)
+  }
+})
 
 const selectedProject = computed(() =>
   selectedProjectId.value === null ? undefined : projectsStore.byId(Number(selectedProjectId.value)),

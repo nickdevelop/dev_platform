@@ -560,14 +560,20 @@ const isCollabSession = computed(() => activeSession.value?.backend === 'group-f
 const activeWorktreeId = computed(() => activeSession.value?.worktreeId ?? 0)
 
 watch(
-  [() => props.projectId, activeWorktreeId],
-  ([pId, wtId]) => {
+  [() => props.projectId, activeWorktreeId, () => props.sessionId],
+  ([pId, wtId, sId]) => {
     if (pId) {
-      workspaceDock.setSessionScope(pId, wtId ?? 0)
+      workspaceDock.setSessionScope(pId, wtId ?? 0, sId)
     }
   },
   { immediate: true },
 )
+
+onActivated(() => {
+  if (props.projectId) {
+    workspaceDock.setSessionScope(props.projectId, activeWorktreeId.value ?? 0, props.sessionId)
+  }
+})
 
 watch(
   () => props.projectId,

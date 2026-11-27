@@ -50,22 +50,22 @@ describe('WorkspaceDockStore', () => {
 
   it('supports locking the workspace scope', () => {
     const store = useWorkspaceDockStore()
-    store.setSessionScope(1, 0)
-    expect(store.effectiveScope).toEqual({ projectId: 1, worktreeId: 0 })
+    store.setSessionScope(1, 0, 'sess-1')
+    expect(store.effectiveScope).toEqual({ projectId: 1, worktreeId: 0, sessionId: 'sess-1' })
 
     store.toggleLock()
     expect(store.isLocked).toBe(true)
-    expect(store.lockedScope).toEqual({ projectId: 1, worktreeId: 0 })
+    expect(store.lockedScope).toEqual({ projectId: 1, worktreeId: 0, sessionId: 'sess-1' })
 
     // When session switches to project 2, effective scope remains locked to project 1
-    store.setSessionScope(2, 0)
-    expect(store.activeScope).toEqual({ projectId: 2, worktreeId: 0 })
-    expect(store.effectiveScope).toEqual({ projectId: 1, worktreeId: 0 })
+    store.setSessionScope(2, 0, 'sess-2')
+    expect(store.activeScope).toEqual({ projectId: 2, worktreeId: 0, sessionId: 'sess-2' })
+    expect(store.effectiveScope).toEqual({ projectId: 1, worktreeId: 0, sessionId: 'sess-1' })
 
     // Unlock
     store.toggleLock()
     expect(store.isLocked).toBe(false)
-    expect(store.effectiveScope).toEqual({ projectId: 2, worktreeId: 0 })
+    expect(store.effectiveScope).toEqual({ projectId: 2, worktreeId: 0, sessionId: 'sess-2' })
   })
 
   it('manages drafts and dirty status per tab', () => {

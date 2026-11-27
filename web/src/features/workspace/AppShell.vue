@@ -352,9 +352,24 @@ onUnmounted(() => {
   window.removeEventListener('keydown', onAppShellKeydown, true)
 })
 
+function syncWorkspaceScope() {
+  if (!projectActive.value) return
+  if (sessionId.value && projectId.value !== null) {
+    const known = sessions.sessionById(sessionId.value)
+    workspaceDock.setSessionScope(projectId.value, known?.worktreeId ?? 0, sessionId.value)
+  } else if (newSessionRoute.value) {
+    const pId = projectId.value ?? drafts.newSessionDraft.projectId
+    const wtId = drafts.newSessionDraft.worktreeId ?? 0
+    if (pId) {
+      workspaceDock.setSessionScope(pId, wtId)
+    }
+  }
+}
+
 // The tab bar mirrors the current route in the project workspace or chat area.
 function syncTabWithRoute() {
   if (projectActive.value) {
+    syncWorkspaceScope()
     if (newSessionRoute.value) {
       openTabs.openNewSession()
       return
@@ -448,14 +463,18 @@ function selectTab(tab: OpenTab) {
   openTabs.setActiveKey(tabKey(tab))
   if (tab.kind === 'new-session') {
     const draft = drafts.newSessionDraft
-    if (draft.projectId) {
-      void router.push({ name: 'session-new', params: { projectId: String(draft.projectId) } })
+    const pId = draft.projectId || (projectId.value !== null ? projectId.value : null)
+    if (pId) {
+      workspaceDock.setSessionScope(pId, draft.worktreeId ?? 0)
+      void router.push({ name: 'session-new', params: { projectId: String(pId) } })
     } else {
       void router.push({ name: 'session-new-global' })
     }
     return
   }
   if (tab.kind === 'session') {
+    const sess = sessions.sessionById(tab.sessionId)
+    workspaceDock.setSessionScope(tab.projectId, sess?.worktreeId ?? 0, tab.sessionId)
     void router.push({ name: 'session', params: { projectId: String(tab.projectId), sessionId: tab.sessionId } })
   }
 }
@@ -603,6 +622,8 @@ function onOpenProjectsManagement() {
 }
 
 function openSessionTab(id: number, sessionId: string) {
+  const sess = sessions.sessionById(sessionId)
+  workspaceDock.setSessionScope(id, sess?.worktreeId ?? 0, sessionId)
   void router.push({ name: 'session', params: { projectId: String(id), sessionId } })
 }
 
@@ -620,11 +641,14 @@ function onCreated(sessionId: string, targetProjectId?: number) {
   const pId = targetProjectId ?? projectId.value
   if (pId === null || pId === undefined) return
   const known = sessions.sessionById(sessionId)
+  workspaceDock.setSessionScope(pId, known?.worktreeId ?? 0, sessionId)
   openTabs.promoteNewSession(pId, sessionId, known?.title ?? '', known?.backend ?? '')
   void router.push({ name: 'session', params: { projectId: String(pId), sessionId } })
 }
 
 function openNewSession(id: number) {
+  const draft = drafts.getNewSessionDraft(id)
+  workspaceDock.setSessionScope(id, draft.worktreeId ?? 0)
   void router.push({ name: 'session-new', params: { projectId: String(id) } })
 }
 

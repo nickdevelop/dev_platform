@@ -266,7 +266,9 @@ const currentDirectory = computed(() => {
         >
           <FileSidebar
             v-if="effectiveScope"
+            :key="`${effectiveScope.projectId}:${effectiveScope.worktreeId}:${effectiveScope.sessionId || ''}`"
             :project-id="effectiveScope.projectId"
+            :session-id="effectiveScope.sessionId"
             :worktree-id="effectiveScope.worktreeId"
             :directory="currentDirectory"
             :active-path="dockStore.currentTab?.path"
