@@ -71,8 +71,9 @@ type permissionPending struct {
 // transcript itself lives in the store; persistent approvals survive only in
 // memory, like every other backend.
 type sessionState struct {
-	title string
-	model string
+	title          string
+	model          string
+	permissionMode string
 	// approvals holds "always" rules for the session.
 	approvals map[string]bool
 	// pending holds tool approvals the adapter is waiting on.
@@ -387,10 +388,11 @@ func (a *Adapter) CreateSession(ctx context.Context, instanceID string, options 
 		return nil, fmt.Errorf("builtin: allocate session id: %w", err)
 	}
 	a.sessions[sessionKey{instanceID: instanceID, sessionID: id}] = &sessionState{
-		title:     options.Title,
-		model:     options.Model,
-		approvals: make(map[string]bool),
-		pending:   make(map[string]*permissionPending),
+		title:          options.Title,
+		model:          options.Model,
+		permissionMode: strings.TrimSpace(options.PermissionMode),
+		approvals:      make(map[string]bool),
+		pending:        make(map[string]*permissionPending),
 	}
 	a.mu.Unlock()
 
@@ -480,10 +482,11 @@ func (a *Adapter) SendMessage(ctx context.Context, ref agents.SessionRef, messag
 	state, ok := a.sessions[sessionKey{instanceID: ref.InstanceID, sessionID: ref.SessionID}]
 	if !ok {
 		state = &sessionState{
-			title:     ref.Title,
-			model:     message.Model,
-			approvals: make(map[string]bool),
-			pending:   make(map[string]*permissionPending),
+			title:          ref.Title,
+			model:          message.Model,
+			permissionMode: strings.TrimSpace(message.PermissionMode),
+			approvals:      make(map[string]bool),
+			pending:        make(map[string]*permissionPending),
 		}
 		a.sessions[sessionKey{instanceID: ref.InstanceID, sessionID: ref.SessionID}] = state
 	}
@@ -493,6 +496,9 @@ func (a *Adapter) SendMessage(ctx context.Context, ref agents.SessionRef, messag
 	}
 	if message.Model != "" {
 		state.model = message.Model
+	}
+	if mode := strings.TrimSpace(message.PermissionMode); mode != "" {
+		state.permissionMode = mode
 	}
 	if ref.Title != "" {
 		state.title = ref.Title

@@ -57,7 +57,9 @@ describe('pure chat API contracts', () => {
   it('filters the chat list by group', async () => {
     const calls = stub({ chats: [], total: 0 })
     await listChats(1, 0, 7)
+    await listChats(20, 0, undefined, { source: 'bot', channelId: 101 })
     expect(calls[0].url).toBe('/api/chats?limit=1&groupId=7')
+    expect(calls[1].url).toBe('/api/chats?limit=20&source=bot&channelId=101')
   })
 
   it('creates, updates and deletes a chat through mutate()', async () => {

@@ -521,3 +521,70 @@ func TestCreateSilentSendAndWaitWithToolPolicy(t *testing.T) {
 		t.Fatalf("expected 4 messages (welcome + user + assistant + notice), got %d", len(msgs))
 	}
 }
+
+func TestBotChatsIsolatedFromDefaultAndGroupListing(t *testing.T) {
+	completer := &fakeCompleter{
+		stream: func(ctx context.Context, req CompletionRequest, onDelta func(CompletionDelta) error) error {
+			return onDelta(CompletionDelta{Text: "ok"})
+		},
+	}
+	service, repo, _ := testService(t, completer)
+
+	group, err := service.CreateGroup(CreateGroupInput{
+		Name:           "研发助手",
+		DefaultModelID: 1,
+		SystemPrompt:   "你是研发助手",
+	})
+	if err != nil {
+		t.Fatalf("CreateGroup: %v", err)
+	}
+
+	normalChat, err := service.Create(context.Background(), CreateInput{
+		GroupID: &group.ID,
+		ModelID: 1,
+		Text:    "快捷助手普通对话",
+	})
+	if err != nil {
+		t.Fatalf("Create normalChat: %v", err)
+	}
+	waitIdle(t, repo, normalChat.ID)
+
+	botChat1, err := service.CreateSilentWithMeta(group.ID, "微信渠道 · 对话 1", 0, "", "", SourceBot, 10)
+	if err != nil {
+		t.Fatalf("CreateSilentWithMeta 1: %v", err)
+	}
+	if botChat1.Source != SourceBot || botChat1.BotChannelID != 10 || botChat1.ModelID != 1 || botChat1.SystemPrompt != "你是研发助手" {
+		t.Fatalf("unexpected botChat1: %+v", botChat1)
+	}
+	_, err = service.CreateSilentWithMeta(group.ID, "企微渠道 · 对话 2", 0, "", "", SourceBot, 20)
+	if err != nil {
+		t.Fatalf("CreateSilentWithMeta 2: %v", err)
+	}
+
+	// Default List and ListByGroup must exclude source=bot chats.
+	allDefault, totalDefault, err := service.List(50, 0)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if totalDefault != 1 || len(allDefault) != 1 || allDefault[0].ID != normalChat.ID {
+		t.Fatalf("default List leaked bot chats: total=%d chats=%+v", totalDefault, allDefault)
+	}
+
+	byGroup, totalGroup, err := service.ListByGroup(group.ID, 50, 0)
+	if err != nil {
+		t.Fatalf("ListByGroup: %v", err)
+	}
+	if totalGroup != 1 || len(byGroup) != 1 || byGroup[0].ID != normalChat.ID {
+		t.Fatalf("ListByGroup leaked bot chats: total=%d chats=%+v", totalGroup, byGroup)
+	}
+
+	// Explicit source=bot queries return channel-bound bot chats.
+	botAll, totalBotAll, err := service.ListFiltered(ListFilter{Source: SourceBot, Limit: 50})
+	if err != nil || totalBotAll != 2 || len(botAll) != 2 {
+		t.Fatalf("source=bot failed: total=%d len=%d err=%v", totalBotAll, len(botAll), err)
+	}
+	botCh10, totalCh10, err := service.ListFiltered(ListFilter{Source: SourceBot, BotChannelID: 10, Limit: 50})
+	if err != nil || totalCh10 != 1 || len(botCh10) != 1 || botCh10[0].ID != botChat1.ID {
+		t.Fatalf("source=bot&channelId=10 failed: total=%d chats=%+v err=%v", totalCh10, botCh10, err)
+	}
+}

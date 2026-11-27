@@ -3,8 +3,8 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import QRCode from 'qrcode'
 import { ElMessage } from 'element-plus'
 import { RefreshRight } from '@element-plus/icons-vue'
-import type { BotChannel, QRLoginState } from '../../api/bot'
-import { useBotStore } from '../../stores/bot'
+import type { BotChannel, QRLoginState } from '../../../api/bot'
+import { useBotStore } from '../../../stores/bot'
 
 const props = defineProps<{
   channel: BotChannel
@@ -140,7 +140,7 @@ onBeforeUnmount(() => {
     :model-value="true"
     width="420px"
     :close-on-click-modal="false"
-    data-test="bot-qr-login-dialog"
+    data-test="channel-qr-login-dialog"
     @close="handleCancel"
   >
     <template #header>

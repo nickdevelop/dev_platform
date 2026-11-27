@@ -237,12 +237,22 @@ func (s *Service) List(limit, offset int) ([]Chat, int, error) {
 // activity. When groupID is 0, it returns ungrouped conversations. For groupID > 0,
 // the group must exist; an unknown group is a 404, not an empty page.
 func (s *Service) ListByGroup(groupID uint, limit, offset int) ([]Chat, int, error) {
-	if groupID > 0 {
-		if _, err := s.repo.GetGroup(groupID); err != nil {
+	return s.ListFiltered(ListFilter{
+		GroupID: &groupID,
+		Limit:   limit,
+		Offset:  offset,
+	})
+}
+
+// ListFiltered lists conversations matching filter, validating any referenced
+// group and populating live running state.
+func (s *Service) ListFiltered(filter ListFilter) ([]Chat, int, error) {
+	if filter.GroupID != nil && *filter.GroupID > 0 {
+		if _, err := s.repo.GetGroup(*filter.GroupID); err != nil {
 			return nil, 0, err
 		}
 	}
-	chats, total, err := s.repo.ListChatsByGroup(groupID, limit, offset)
+	chats, total, err := s.repo.ListChatsFiltered(filter)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -260,6 +270,11 @@ func (s *Service) Get(id uint) (Chat, error) {
 	}
 	chat.Running = s.manager.running(chat.ID)
 	return chat, nil
+}
+
+// GetGroup returns a chat group configuration by ID.
+func (s *Service) GetGroup(id uint) (ChatGroup, error) {
+	return s.repo.GetGroup(id)
 }
 
 // Create creates a conversation and its first exchange, then starts
@@ -356,6 +371,11 @@ func (s *Service) Send(ctx context.Context, chatID uint, input SendInput) (Chat,
 	if input.ModelID != 0 {
 		modelID = input.ModelID
 	}
+	if modelID == 0 && chat.GroupID != 0 {
+		if group, err := s.repo.GetGroup(chat.GroupID); err == nil && group.DefaultModelID != 0 {
+			modelID = group.DefaultModelID
+		}
+	}
 	if modelID == 0 && s.toolPolicyResolver != nil {
 		if policy, ok := s.toolPolicyResolver(chat.ID); ok && policy.ModelID != 0 {
 			modelID = policy.ModelID
@@ -399,9 +419,33 @@ func (s *Service) Send(ctx context.Context, chatID uint, input SendInput) (Chat,
 }
 
 // CreateSilent creates a conversation (with an optional welcome message) without
-// triggering an LLM completion turn. Used when provisioning channel-bound Bot chats.
+// triggering an LLM completion turn.
 func (s *Service) CreateSilent(groupID uint, title string, modelID uint, systemPrompt string, welcomeText string) (Chat, error) {
+	return s.CreateSilentWithMeta(groupID, title, modelID, systemPrompt, welcomeText, SourceDefault, 0)
+}
+
+// CreateSilentWithMeta creates a silent conversation with explicit source and
+// channel binding metadata, inheriting defaults from groupID when present.
+func (s *Service) CreateSilentWithMeta(groupID uint, title string, modelID uint, systemPrompt string, welcomeText string, source string, botChannelID uint) (Chat, error) {
 	now := time.Now().UTC()
+	var promptID uint
+	resolvedPrompt := strings.TrimSpace(systemPrompt)
+	if groupID > 0 {
+		if group, err := s.repo.GetGroup(groupID); err == nil {
+			promptID = group.PromptID
+			if resolvedPrompt == "" {
+				resolvedPrompt = strings.TrimSpace(group.SystemPrompt)
+				if group.PromptID > 0 && s.promptReader != nil {
+					if p, pErr := s.promptReader.Get(group.PromptID); pErr == nil && strings.TrimSpace(p.Content) != "" {
+						resolvedPrompt = strings.TrimSpace(p.Content)
+					}
+				}
+			}
+			if modelID == 0 && group.DefaultModelID != 0 {
+				modelID = group.DefaultModelID
+			}
+		}
+	}
 	var modelName string
 	if modelID > 0 {
 		if m, err := s.resolveModel(modelID); err == nil {
@@ -417,7 +461,10 @@ func (s *Service) CreateSilent(groupID uint, title string, modelID uint, systemP
 		Title:        trimmedTitle,
 		ModelID:      modelID,
 		ModelName:    modelName,
-		SystemPrompt: strings.TrimSpace(systemPrompt),
+		PromptID:     promptID,
+		SystemPrompt: resolvedPrompt,
+		Source:       strings.TrimSpace(source),
+		BotChannelID: botChannelID,
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
@@ -493,6 +540,11 @@ func (s *Service) SendAndWait(ctx context.Context, chatID uint, input SendInput)
 	modelID := chat.ModelID
 	if input.ModelID != 0 {
 		modelID = input.ModelID
+	}
+	if modelID == 0 && chat.GroupID != 0 {
+		if group, err := s.repo.GetGroup(chat.GroupID); err == nil && group.DefaultModelID != 0 {
+			modelID = group.DefaultModelID
+		}
 	}
 	if modelID == 0 && s.toolPolicyResolver != nil {
 		if policy, ok := s.toolPolicyResolver(chat.ID); ok && policy.ModelID != 0 {
@@ -1004,8 +1056,14 @@ func (s *Service) completionRequest(chatID, assistantID uint, model modelconfig.
 	}
 	var tools []ToolDefinition
 	if hasPolicy {
-		if !policy.DisableTools && policy.Executor != nil {
-			tools = policy.Executor.Definitions()
+		if !policy.DisableTools {
+			if policy.Executor != nil {
+				tools = policy.Executor.Definitions()
+			} else if s.toolExecutor != nil && chat.GroupID != 0 {
+				if group, err := s.repo.GetGroup(chat.GroupID); err == nil && group.EnablePlatformTools {
+					tools = s.toolExecutor.Definitions()
+				}
+			}
 		}
 	} else if s.toolExecutor != nil && chat.GroupID != 0 {
 		if group, err := s.repo.GetGroup(chat.GroupID); err == nil && group.EnablePlatformTools {

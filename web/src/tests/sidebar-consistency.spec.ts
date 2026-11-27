@@ -137,7 +137,6 @@ describe('Column 2 (Sidebar) Design Consistency across menus', () => {
         { path: '/engines/assistant', component: { template: '<div />' } },
         { path: '/engines/coder', component: { template: '<div />' } },
         { path: '/engines/orchestrator', component: { template: '<div />' } },
-        { path: '/engines/bot', component: { template: '<div />' } },
         { path: '/engines/agents', component: { template: '<div />' } },
       ],
     })
@@ -148,18 +147,17 @@ describe('Column 2 (Sidebar) Design Consistency across menus', () => {
 
     expect(wrapper.find('[data-test="engines-nav"]').exists()).toBe(true)
     const items = wrapper.findAll('.el-menu-item')
-    expect(items).toHaveLength(5)
+    expect(items).toHaveLength(4)
     // Menu order is part of the product contract.
     expect(wrapper.findAll('.link-label').map((label) => label.text())).toEqual([
       '助手引擎',
       '会话引擎',
       '协同引擎',
-      'Bot 引擎',
       'Agent配置',
     ])
     // Every entry still carries its second line: the menu replaced the list
     // markup, not the information it showed.
-    expect(wrapper.findAll('.link-desc')).toHaveLength(5)
+    expect(wrapper.findAll('.link-desc')).toHaveLength(4)
 
     const active = wrapper.findAll('.el-menu-item.is-active')
     expect(active).toHaveLength(1)
@@ -176,6 +174,7 @@ describe('Column 2 (Sidebar) Design Consistency across menus', () => {
         { path: '/org/assistants', component: { template: '<div />' } },
         { path: '/org/employees', component: { template: '<div />' } },
         { path: '/org/teams', component: { template: '<div />' } },
+        { path: '/org/channels', component: { template: '<div />' } },
       ],
     })
     await router.push('/org/assistants')
@@ -185,16 +184,17 @@ describe('Column 2 (Sidebar) Design Consistency across menus', () => {
 
     expect(wrapper.find('[data-test="org-sidebar"]').exists()).toBe(true)
     const items = wrapper.findAll('.el-menu-item')
-    expect(items).toHaveLength(4)
+    expect(items).toHaveLength(5)
     expect(wrapper.findAll('.link-label').map((label) => label.text())).toEqual([
       'AI 提示词',
       'AI 助手',
       'AI 员工',
       'AI 团队',
+      '消息渠道',
     ])
     // Every entry still carries its second line: the menu replaced the list
     // markup, not the information it showed.
-    expect(wrapper.findAll('.link-desc')).toHaveLength(4)
+    expect(wrapper.findAll('.link-desc')).toHaveLength(5)
 
     const active = wrapper.findAll('.el-menu-item.is-active')
     expect(active).toHaveLength(1)

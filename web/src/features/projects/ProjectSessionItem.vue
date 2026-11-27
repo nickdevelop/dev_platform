@@ -95,7 +95,7 @@ const modelLabel = computed(() => {
     @keydown.enter.prevent="emit('select', session.id)"
     @keydown.space.prevent="emit('select', session.id)"
   >
-    <!-- Row 1: Logo + Title -->
+    <!-- Row 1: Logo + Title + Optional BOT source badge -->
     <div class="session-row-top flex items-center gap-1.5 mb-0.5 min-w-0">
       <BackendIcon :backend="session.backend" />
       <RunningIndicator v-if="isRunning" />
@@ -104,6 +104,14 @@ const modelLabel = computed(() => {
         :title="session.title || untitledLabel"
       >
         {{ session.title || untitledLabel }}
+      </span>
+      <span
+        v-if="session.source === 'bot'"
+        class="entity-chip entity-chip--wechat shrink-0"
+        title="由外部消息渠道触发并自动放行"
+        data-test="session-bot-badge"
+      >
+        BOT
       </span>
     </div>
 

@@ -7,14 +7,6 @@ export interface ChannelDescriptor {
   supportsQrLogin: boolean
 }
 
-export interface BotToolMeta {
-  name: string
-  label: string
-  category: string
-  description: string
-  dangerous?: boolean
-}
-
 export type BotChannelStatus =
   | 'unconfigured'
   | 'waiting_qr'
@@ -23,6 +15,8 @@ export type BotChannelStatus =
   | 'expired'
   | 'disconnected'
   | 'error'
+
+export type BotTargetMode = 'assistant' | 'agent'
 
 export interface BotChannel {
   id: number
@@ -33,10 +27,20 @@ export interface BotChannel {
   lastError?: string
   hasCredentials: boolean
   accountId?: string
+  targetMode: BotTargetMode | string
   modelId: number
-  autoNotify: boolean
+  promptId: number
+  systemPrompt?: string
+  defaultProjectId: number
+  worktreeId: number
+  defaultBackend?: string
+  agentModel?: string
   chatGroupId: number
   chatId: number
+  activeSessionId?: string
+  typingIndicator: boolean
+  autoNotify: boolean
+  maxReplyLength: number
   lastConnectedAt?: string
   createdAt: string
   updatedAt: string
@@ -45,15 +49,33 @@ export interface BotChannel {
 export interface CreateBotChannelInput {
   name: string
   channelType: string
+  targetMode: BotTargetMode
+  chatGroupId?: number
   modelId?: number
+  defaultProjectId?: number
+  worktreeId?: number
+  promptId?: number
+  systemPrompt?: string
+  agentModel?: string
+  typingIndicator?: boolean
   autoNotify?: boolean
+  maxReplyLength?: number
 }
 
 export interface UpdateBotChannelInput {
   name?: string
   enabled?: boolean
+  targetMode?: BotTargetMode
+  chatGroupId?: number
   modelId?: number
+  defaultProjectId?: number
+  worktreeId?: number
+  promptId?: number
+  systemPrompt?: string
+  agentModel?: string
+  typingIndicator?: boolean
   autoNotify?: boolean
+  maxReplyLength?: number
 }
 
 export interface QRLoginState {
@@ -66,10 +88,6 @@ export interface QRLoginState {
 
 export function listBotDescriptors(): Promise<{ descriptors: ChannelDescriptor[] }> {
   return get<{ descriptors: ChannelDescriptor[] }>('/bot/descriptors')
-}
-
-export function listBotTools(): Promise<{ tools: BotToolMeta[] }> {
-  return get<{ tools: BotToolMeta[] }>('/bot/tools')
 }
 
 export function listBotChannels(): Promise<{ channels: BotChannel[] }> {
@@ -94,6 +112,10 @@ export function startBotChannel(id: number): Promise<BotChannel> {
 
 export function stopBotChannel(id: number): Promise<BotChannel> {
   return mutate<BotChannel>('POST', `/bot/channels/${id}/stop`, {})
+}
+
+export function resetBotChannelContext(id: number): Promise<BotChannel> {
+  return mutate<BotChannel>('POST', `/bot/channels/${id}/new`, {})
 }
 
 export function startBotQRLogin(id: number): Promise<QRLoginState> {

@@ -470,3 +470,88 @@ func TestAdapterStepLimit(t *testing.T) {
 		t.Fatalf("expected fallback 50, got %d", limit)
 	}
 }
+
+func TestSessionPermissionModeOverridesGlobalConfirm(t *testing.T) {
+	workDir := t.TempDir()
+	responses := newTranscriptMemory()
+	step := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		step++
+		if step%2 == 1 {
+			sse(w, sseToolCall())
+			return
+		}
+		sse(w, sseFinal())
+	}))
+	defer server.Close()
+
+	// Platform-wide default is confirm, which normally blocks write_file.
+	adapter := New(Options{
+		TranscriptStore: responses,
+		ModelResolver:   modelStub{endpoint: ModelEndpoint{BaseURL: server.URL, ModelID: "m"}},
+		PermissionMode:  func() string { return PermissionModeConfirm },
+		Now:             func() time.Time { return time.Unix(0, 0).UTC() },
+	})
+	inst, err := adapter.StartInstance(context.Background(), agents.StartInstanceRequest{Directory: workDir})
+	if err != nil {
+		t.Fatalf("StartInstance: %v", err)
+	}
+	ref, err := adapter.CreateSession(context.Background(), inst.ID, agents.CreateSessionOptions{
+		Title:          "BOT自动放行",
+		PermissionMode: PermissionModeAuto,
+	})
+	if err != nil {
+		t.Fatalf("CreateSession: %v", err)
+	}
+	stream, err := adapter.Subscribe(context.Background(), inst.ID)
+	if err != nil {
+		t.Fatalf("Subscribe: %v", err)
+	}
+	if err := adapter.SendMessage(context.Background(), *ref, agents.SendMessageRequest{Text: "写文件"}); err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	events := drainUntilTurnEnd(t, stream)
+	for _, ev := range events {
+		if ev.Type == agents.EventInteraction {
+			t.Fatalf("unexpected approval interaction with session PermissionMode=auto: %+v", ev.Interaction)
+		}
+	}
+	written, err := os.ReadFile(filepath.Join(workDir, "notes.txt"))
+	if err != nil || string(written) != "hello" {
+		t.Fatalf("write_file did not execute under session PermissionMode=auto: (%q, %v)", written, err)
+	}
+
+	// Simulate restart: StopInstance clears in-memory sessionState, ContinueSession + SendMessage carries PermissionMode.
+	_ = os.Remove(filepath.Join(workDir, "notes.txt"))
+	if err := adapter.StopInstance(context.Background(), inst.ID); err != nil {
+		t.Fatalf("StopInstance: %v", err)
+	}
+	inst2, err := adapter.StartInstance(context.Background(), agents.StartInstanceRequest{Directory: workDir})
+	if err != nil {
+		t.Fatalf("StartInstance 2: %v", err)
+	}
+	resumedRef := agents.SessionRef{InstanceID: inst2.ID, Backend: agents.BackendBuiltin, SessionID: ref.SessionID}
+	if _, err := adapter.ContinueSession(context.Background(), resumedRef); err != nil {
+		t.Fatalf("ContinueSession: %v", err)
+	}
+	stream2, err := adapter.Subscribe(context.Background(), inst2.ID)
+	if err != nil {
+		t.Fatalf("Subscribe 2: %v", err)
+	}
+	if err := adapter.SendMessage(context.Background(), resumedRef, agents.SendMessageRequest{
+		Text:           "继续写文件",
+		PermissionMode: PermissionModeAuto,
+	}); err != nil {
+		t.Fatalf("SendMessage 2: %v", err)
+	}
+	events2 := drainUntilTurnEnd(t, stream2)
+	for _, ev := range events2 {
+		if ev.Type == agents.EventInteraction {
+			t.Fatalf("unexpected approval interaction after resume with SendMessage.PermissionMode=auto: %+v", ev.Interaction)
+		}
+	}
+	written2, err := os.ReadFile(filepath.Join(workDir, "notes.txt"))
+	if err != nil || string(written2) != "hello" {
+		t.Fatalf("write_file did not execute after resume: (%q, %v)", written2, err)
+	}
+}

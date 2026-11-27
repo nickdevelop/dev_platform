@@ -326,6 +326,9 @@ type CreateSessionOptions struct {
 	// Model selects the agent model, when the backend declared
 	// Capabilities.ModelSelection.
 	Model string `json:"model,omitempty"`
+	// PermissionMode optionally overrides the backend's global permission mode
+	// for this session (e.g. "confirm" or "auto"). Empty preserves the default.
+	PermissionMode string `json:"permissionMode,omitempty"`
 }
 
 // SendMessageRequest is one user turn sent to an agent session. The adapter
@@ -337,6 +340,9 @@ type SendMessageRequest struct {
 	// Model overrides the model for this message, when the backend declared
 	// Capabilities.ModelSelection.
 	Model string `json:"model,omitempty"`
+	// PermissionMode optionally overrides the permission mode for this session/turn
+	// (e.g. "confirm" or "auto"). Empty preserves the session or backend default.
+	PermissionMode string `json:"permissionMode,omitempty"`
 	// Images carries optional image attachments sent with this turn.
 	Images []ImageAttachment `json:"images,omitempty"`
 	// OnNativeSessionBound is set when the session's native id may only be

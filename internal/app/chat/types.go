@@ -35,6 +35,14 @@ const (
 	QuickAssistantGroupName = "快捷助手"
 )
 
+// Chat conversation sources. Empty / default chats appear in regular assistant
+// history; SourceBot marks channel-created chats isolated from Quick Assistant.
+const (
+	SourceDefault = ""
+	SourceBot     = "bot"
+	SourceAll     = "all"
+)
+
 // Message roles and statuses.
 const (
 	RoleUser      = "user"
@@ -129,9 +137,22 @@ type Chat struct {
 	ModelName    string    `json:"modelName"`
 	PromptID     uint      `json:"promptId"`
 	SystemPrompt string    `json:"-"`
+	Source       string    `json:"source,omitempty"`
+	BotChannelID uint      `json:"botChannelId,omitempty"`
 	Running      bool      `json:"running"`
 	CreatedAt    time.Time `json:"createdAt"`
 	UpdatedAt    time.Time `json:"updatedAt"`
+}
+
+// ListFilter narrows a conversation list query by group, source and channel.
+// Empty Source excludes "bot" chats so Quick Assistant and regular history never
+// mix with channel-bound bot chats.
+type ListFilter struct {
+	GroupID      *uint
+	Source       string
+	BotChannelID uint
+	Limit        int
+	Offset       int
 }
 
 // Message is the JSON-stable API representation of one chat message.

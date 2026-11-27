@@ -593,4 +593,19 @@ func TestMigrateCreatesBotTables(t *testing.T) {
 	if !db.Migrator().HasIndex(&BotSessionWatch{}, "idx_bot_watch_session_channel") {
 		t.Error("bot_session_watches unique index idx_bot_watch_session_channel is missing")
 	}
+	for _, col := range []string{"source", "bot_channel_id"} {
+		if !db.Migrator().HasColumn(&Chat{}, col) {
+			t.Errorf("chats missing column %s", col)
+		}
+	}
+	for _, col := range []string{"source", "bot_channel_id", "permission_mode"} {
+		if !db.Migrator().HasColumn(&AgentSession{}, col) {
+			t.Errorf("agent_sessions missing column %s", col)
+		}
+	}
+	for _, col := range []string{"target_mode", "worktree_id", "agent_model", "active_session_id", "typing_indicator", "max_reply_length"} {
+		if !db.Migrator().HasColumn(&BotChannel{}, col) {
+			t.Errorf("bot_channels missing column %s", col)
+		}
+	}
 }

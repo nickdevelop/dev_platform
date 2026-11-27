@@ -40,20 +40,11 @@ export interface CoreEngineConfig {
   searchEngine: string
 }
 
-export interface BotEngineConfig {
-  maxSteps: number
-  typingIndicator: boolean
-  autoNotifySession: boolean
-  maxReplyLength: number
-  enabledTools: string[]
-}
-
 export interface EnginesSetting {
   steward: StewardConfig
   coder: BuiltinCoderConfig
   orchestrator: OrchestratorConfig
   core: CoreEngineConfig
-  bot: BotEngineConfig
   updatedAt?: string
 }
 

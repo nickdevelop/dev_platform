@@ -7,13 +7,12 @@ import {
   getBotQRLoginStatus,
   listBotChannels,
   listBotDescriptors,
-  listBotTools,
+  resetBotChannelContext,
   startBotChannel,
   startBotQRLogin,
   stopBotChannel,
   updateBotChannel,
   type BotChannel,
-  type BotToolMeta,
   type ChannelDescriptor,
   type CreateBotChannelInput,
   type QRLoginState,
@@ -25,7 +24,6 @@ import { unifiedEventBus } from '../shared/events/UnifiedEventBusClient'
 
 export const useBotStore = defineStore('bot', () => {
   const descriptors = ref<ChannelDescriptor[]>([])
-  const tools = ref<BotToolMeta[]>([])
   const channels = ref<BotChannel[]>([])
   const qrStates = ref<Record<number, QRLoginState>>({})
   const loading = ref(false)
@@ -82,17 +80,15 @@ export const useBotStore = defineStore('bot', () => {
     loading.value = true
     error.value = null
     try {
-      const [descRes, toolsRes, chRes] = await Promise.all([
+      const [descRes, chRes] = await Promise.all([
         listBotDescriptors(),
-        listBotTools(),
         listBotChannels(),
       ])
       descriptors.value = descRes.descriptors || []
-      tools.value = toolsRes.tools || []
       channels.value = chRes.channels || []
       subscribeBus()
     } catch (err: unknown) {
-      error.value = describeApiError(err, '加载 Bot 渠道信息失败')
+      error.value = describeApiError(err, '加载消息渠道信息失败')
     } finally {
       loading.value = false
     }
@@ -158,6 +154,18 @@ export const useBotStore = defineStore('bot', () => {
     }
   }
 
+  async function resetContext(id: number): Promise<BotChannel | null> {
+    error.value = null
+    try {
+      const updated = await resetBotChannelContext(id)
+      applyChannelUpdate(updated)
+      return updated
+    } catch (err: unknown) {
+      error.value = describeApiError(err, '新建渠道会话失败')
+      return null
+    }
+  }
+
   async function beginQRLogin(id: number): Promise<QRLoginState | null> {
     error.value = null
     try {
@@ -190,7 +198,6 @@ export const useBotStore = defineStore('bot', () => {
 
   return {
     descriptors,
-    tools,
     channels,
     qrStates,
     loading,
@@ -203,6 +210,7 @@ export const useBotStore = defineStore('bot', () => {
     removeChannel,
     startChannel,
     stopChannel,
+    resetContext,
     beginQRLogin,
     refreshQRStatus,
     cancelQRLogin,

@@ -97,6 +97,9 @@ type Session struct {
 	NativeSessionID string              `json:"nativeSessionId"`
 	Title           string              `json:"title,omitempty"`
 	Model           string              `json:"model,omitempty"`
+	Source          string              `json:"source,omitempty"`
+	BotChannelID    uint                `json:"botChannelId,omitempty"`
+	PermissionMode  string              `json:"permissionMode,omitempty"`
 	Status          SessionStatus       `json:"status"`
 	Turn            TurnState           `json:"turn"`
 	Capabilities    agents.Capabilities `json:"capabilities"`
@@ -547,15 +550,22 @@ type CreateOutcome struct {
 	MessageError string
 }
 
-// Create starts a new agent-native session for the project's backend. It
-// reuses the project's most recently created running instance of that backend
-// and starts one when none is running, then indexes the new session. When a
-// model is supplied it is chosen at creation — backends create the session on
-// that model directly, so no switch call is needed — independent of whether a
-// first message rides along; a supplied message is admitted right after: the
-// turn runs while the workbench opens the session. The message failing to be
-// admitted does not fail the create — the session is already live and the caller
-// surfaces MessageError instead.
+// CreateOptions configures a newly created session including optional
+// platform metadata (e.g. bot channel source binding and permission override).
+type CreateOptions struct {
+	ProjectID      uint
+	WorktreeID     uint
+	Backend        agents.BackendID
+	Title          string
+	Message        string
+	Model          string
+	Images         []agents.ImageAttachment
+	Source         string
+	BotChannelID   uint
+	PermissionMode string
+}
+
+// Create starts a new agent-native session for the project's backend.
 func (s *Service) Create(ctx context.Context, projectID uint, backend agents.BackendID, title, message, model string, images ...[]agents.ImageAttachment) (CreateOutcome, error) {
 	return s.CreateInWorktree(ctx, projectID, 0, backend, title, message, model, images...)
 }
@@ -566,27 +576,44 @@ func (s *Service) Create(ctx context.Context, projectID uint, backend agents.Bac
 // starts one when none is running, then indexes the new session. The rest of
 // the behavior matches Create.
 func (s *Service) CreateInWorktree(ctx context.Context, projectID uint, worktreeID uint, backend agents.BackendID, title, message, model string, images ...[]agents.ImageAttachment) (CreateOutcome, error) {
-	if !backend.Valid() {
+	var imgs []agents.ImageAttachment
+	if len(images) > 0 {
+		imgs = images[0]
+	}
+	return s.CreateWithOptions(ctx, CreateOptions{
+		ProjectID:  projectID,
+		WorktreeID: worktreeID,
+		Backend:    backend,
+		Title:      title,
+		Message:    message,
+		Model:      model,
+		Images:     imgs,
+	})
+}
+
+// CreateWithOptions creates a new agent-native session with full platform options.
+func (s *Service) CreateWithOptions(ctx context.Context, opts CreateOptions) (CreateOutcome, error) {
+	if !opts.Backend.Valid() {
 		return CreateOutcome{}, fmt.Errorf("%w: backend is required", ErrInvalidRequest)
 	}
-	if s.agentDisabled(backend) {
-		return CreateOutcome{}, fmt.Errorf("%w: %q", ErrAgentDisabled, backend)
+	if s.agentDisabled(opts.Backend) {
+		return CreateOutcome{}, fmt.Errorf("%w: %q", ErrAgentDisabled, opts.Backend)
 	}
-	inst, err := s.instanceForBackend(ctx, projectID, worktreeID, backend)
+	inst, err := s.instanceForBackend(ctx, opts.ProjectID, opts.WorktreeID, opts.Backend)
 	if err != nil {
 		return CreateOutcome{}, err
 	}
 	if !instanceRunnable(inst) {
 		return CreateOutcome{}, fmt.Errorf("%w: %s is %s", instances.ErrInstanceNotRunning, inst.ID, inst.Status)
 	}
-	if model != "" && !s.capabilities(inst.Backend).ModelSelection {
+	if opts.Model != "" && !s.capabilities(inst.Backend).ModelSelection {
 		return CreateOutcome{}, fmt.Errorf("%w: model selection", ErrUnsupportedCapability)
 	}
 	adapter, err := s.adapter(inst.Backend)
 	if err != nil {
 		return CreateOutcome{}, err
 	}
-	if inst.WorktreeID != worktreeID {
+	if inst.WorktreeID != opts.WorktreeID {
 		// Defensive: a mismatched instance would run the session in the wrong
 		// working tree, which is worse than refusing the create.
 		return CreateOutcome{}, fmt.Errorf("%w: instance worktree mismatch", ErrInvalidRequest)
@@ -594,17 +621,23 @@ func (s *Service) CreateInWorktree(ctx context.Context, projectID uint, worktree
 	// Backends do not name new sessions themselves (pi only records a name
 	// when one is given), so an untitled first message names the session the
 	// same way a first composer message would.
-	message = strings.TrimSpace(message)
+	message := strings.TrimSpace(opts.Message)
+	title := opts.Title
 	if title == "" && message != "" {
 		// A role/flow prompt block leads the message; the title comes from the
 		// user's own input so sessions sharing one prompt stay distinguishable.
 		title = textutil.DeriveSessionTitle(message)
 	}
-	ref, err := adapter.CreateSession(ctx, inst.ID, agents.CreateSessionOptions{Title: title, Model: model})
+	createOpts := agents.CreateSessionOptions{
+		Title:          title,
+		Model:          opts.Model,
+		PermissionMode: strings.TrimSpace(opts.PermissionMode),
+	}
+	ref, err := adapter.CreateSession(ctx, inst.ID, createOpts)
 	if err != nil {
-		if newInst, startErr := s.instances.StartInWorktree(ctx, projectID, worktreeID, backend); startErr == nil && newInst.ID != inst.ID {
+		if newInst, startErr := s.instances.StartInWorktree(ctx, opts.ProjectID, opts.WorktreeID, opts.Backend); startErr == nil && newInst.ID != inst.ID {
 			inst = newInst
-			ref, err = adapter.CreateSession(ctx, inst.ID, agents.CreateSessionOptions{Title: title, Model: model})
+			ref, err = adapter.CreateSession(ctx, inst.ID, createOpts)
 		}
 	}
 	if err != nil {
@@ -619,19 +652,23 @@ func (s *Service) CreateInWorktree(ctx context.Context, projectID uint, worktree
 	// The tracker subscribes before the message is admitted so the turn's
 	// first lifecycle events are never ahead of the subscription.
 	s.turnTracker.Ensure(inst.ID)
-	row, err := s.indexRef(projectID, inst, *ref, SessionActive)
+	row, err := s.indexRefWithMeta(
+		opts.ProjectID,
+		inst,
+		*ref,
+		SessionActive,
+		strings.TrimSpace(opts.Source),
+		opts.BotChannelID,
+		strings.TrimSpace(opts.PermissionMode),
+	)
 	if err != nil {
 		return CreateOutcome{}, err
 	}
-	if model != "" {
-		_ = s.store.UpdateModel(row.ID, model)
-		row.Model = model
+	if opts.Model != "" {
+		_ = s.store.UpdateModel(row.ID, opts.Model)
+		row.Model = opts.Model
 	}
 	outcome := CreateOutcome{Session: row}
-	var imgs []agents.ImageAttachment
-	if len(images) > 0 {
-		imgs = images[0]
-	}
 	onBound := func(nativeSessionID string) error {
 		if nativeSessionID == outcome.Session.NativeSessionID {
 			return nil
@@ -642,9 +679,14 @@ func (s *Service) CreateInWorktree(ctx context.Context, projectID uint, worktree
 		outcome.Session.NativeSessionID = nativeSessionID
 		return nil
 	}
-	if message != "" || len(imgs) > 0 {
+	if message != "" || len(opts.Images) > 0 {
 		sendPrompt := s.resolveMessagePrompt(row.ProjectID, row.WorktreeID, row.InstanceID, message)
-		if err := adapter.SendMessage(ctx, *ref, agents.SendMessageRequest{Text: sendPrompt, Images: imgs, OnNativeSessionBound: onBound}); err != nil {
+		if err := adapter.SendMessage(ctx, *ref, agents.SendMessageRequest{
+			Text:                 sendPrompt,
+			Images:               opts.Images,
+			PermissionMode:       strings.TrimSpace(opts.PermissionMode),
+			OnNativeSessionBound: onBound,
+		}); err != nil {
 			// The session stays; the workbench pre-fills the composer and
 			// reports the failure so the user can send again.
 			outcome.MessageError = "agent_operation_failed"
@@ -1059,7 +1101,7 @@ func (s *Service) Send(ctx context.Context, projectID uint, sessionID, text, mod
 
 	promptText := s.resolveMessagePrompt(row.ProjectID, row.WorktreeID, row.InstanceID, text)
 
-	if err := adapter.SendMessage(ctx, ref, agents.SendMessageRequest{Text: promptText, Model: model, Images: attachedImages, OnNativeSessionBound: onBound}); err != nil {
+	if err := adapter.SendMessage(ctx, ref, agents.SendMessageRequest{Text: promptText, Model: model, PermissionMode: row.PermissionMode, Images: attachedImages, OnNativeSessionBound: onBound}); err != nil {
 		return Session{}, fmt.Errorf("%w: send message: %w", ErrBackendFailed, err)
 	}
 	if model != "" {
@@ -1374,10 +1416,17 @@ func (s *Service) setStatus(row database.AgentSession, status SessionStatus) dat
 // idempotently: the already-indexed row is returned instead of surfacing a 500
 // from the unique-index violation.
 func (s *Service) indexRef(projectID uint, inst instances.Instance, ref agents.SessionRef, status SessionStatus) (Session, error) {
+	return s.indexRefWithMeta(projectID, inst, ref, status, "", 0, "")
+}
+
+func (s *Service) indexRefWithMeta(projectID uint, inst instances.Instance, ref agents.SessionRef, status SessionStatus, source string, botChannelID uint, permissionMode string) (Session, error) {
 	row, err := s.newSessionRow(projectID, inst, ref, status)
 	if err != nil {
 		return Session{}, err
 	}
+	row.Source = source
+	row.BotChannelID = botChannelID
+	row.PermissionMode = permissionMode
 	if err := s.store.Create(row); err != nil {
 		if existing, getErr := s.store.GetByNative(projectID, string(inst.Backend), ref.SessionID); getErr == nil {
 			return s.sessionFromModel(existing), nil
@@ -1439,6 +1488,9 @@ func (s *Service) sessionFromModel(row database.AgentSession) Session {
 		NativeSessionID: row.NativeSessionID,
 		Title:           row.Title,
 		Model:           row.Model,
+		Source:          row.Source,
+		BotChannelID:    row.BotChannelID,
+		PermissionMode:  row.PermissionMode,
 		Status:          SessionStatus(row.Status),
 		Turn:            s.turnTracker.Of(backend, row.NativeSessionID),
 		Capabilities:    s.capabilities(backend),

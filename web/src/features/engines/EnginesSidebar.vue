@@ -9,7 +9,7 @@
 // content with our own classes.
 import { computed, type Component } from 'vue'
 import { useRoute } from 'vue-router'
-import { ChatDotRound, Connection, Cpu, Monitor, Share } from '@element-plus/icons-vue'
+import { ChatDotRound, Cpu, Monitor, Share } from '@element-plus/icons-vue'
 
 interface EngineLink {
   // Route name, kept for tests and for future programmatic navigation.
@@ -42,13 +42,6 @@ const links: EngineLink[] = [
     label: '协同引擎',
     desc: '多 Agent 流程拆解与分派',
     icon: Share,
-  },
-  {
-    name: 'engines-bot',
-    path: '/engines/bot',
-    label: 'Bot 引擎',
-    desc: '外部 IM ReAct 执行底座与微信接入',
-    icon: Connection,
   },
   {
     name: 'engines-agents',

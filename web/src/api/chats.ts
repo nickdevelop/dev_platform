@@ -48,6 +48,8 @@ export interface Chat {
   title: string
   modelId: number
   modelName: string
+  source?: string
+  botChannelId?: number
   running: boolean
   createdAt: string
   updatedAt: string
@@ -125,11 +127,25 @@ export type ChatEvent =
   | { chatId: number; timestamp: string; type: 'turn'; turn: ChatTurn }
   | { chatId: number; timestamp: string; type: 'closed'; reason: string }
 
-export function listChats(limit?: number, offset?: number, groupId?: number): Promise<ChatList> {
+export interface ListChatsOptions {
+  source?: 'bot' | 'all' | string
+  channelId?: number
+}
+
+export function listChats(
+  limit?: number,
+  offset?: number,
+  groupId?: number,
+  options?: ListChatsOptions,
+): Promise<ChatList> {
   const params = new URLSearchParams()
   if (limit !== undefined && limit > 0) params.set('limit', String(limit))
   if (offset !== undefined && offset > 0) params.set('offset', String(offset))
   if (groupId !== undefined && groupId >= 0) params.set('groupId', String(groupId))
+  if (options?.source) params.set('source', options.source)
+  if (options?.channelId !== undefined && options.channelId > 0) {
+    params.set('channelId', String(options.channelId))
+  }
   const query = params.toString()
   return get<ChatList>(`/chats${query ? `?${query}` : ''}`)
 }

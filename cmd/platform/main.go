@@ -482,10 +482,11 @@ func runServer(args []string) error {
 		botRepo,
 		channelRegistry,
 		secretStore,
-		settingsService,
 		chatService,
-		platformTools,
 		sessionService,
+		promptService,
+		projectService,
+		agents.BackendBuiltin,
 		eventsMgr,
 	)
 	chatService.SetToolPolicyResolver(botService.PolicyForChat)

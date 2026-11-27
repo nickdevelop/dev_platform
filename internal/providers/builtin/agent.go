@@ -112,6 +112,9 @@ func (a *Adapter) runTurn(inst *instance, ref agents.SessionRef, state *sessionS
 
 	schemas := buildSchemas(a.registry)
 	mode := a.permMode()
+	if state.permissionMode != "" {
+		mode = state.permissionMode
+	}
 	limit := a.stepLimit()
 	for steps := 1; ctx.Err() == nil; steps++ {
 		if limit > 0 && steps > limit {

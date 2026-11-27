@@ -12,7 +12,7 @@
 // decorates the slot content, which is our own markup under our own classes.
 import { computed, type Component } from 'vue'
 import { useRoute } from 'vue-router'
-import { ChatDotRound, Connection, EditPen, User } from '@element-plus/icons-vue'
+import { ChatDotRound, ChatLineRound, Connection, EditPen, User } from '@element-plus/icons-vue'
 
 interface OrgLink {
   // Route name, kept for tests and for future programmatic navigation.
@@ -53,6 +53,13 @@ const links: OrgLink[] = [
     label: 'AI 团队',
     desc: '中控大脑调度与多专家协同',
     icon: Connection,
+  },
+  {
+    name: 'org-channels',
+    path: '/org/channels',
+    label: '消息渠道',
+    desc: '外部 IM 渠道与 AI 服务绑定',
+    icon: ChatLineRound,
   },
 ]
 

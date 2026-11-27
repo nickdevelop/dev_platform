@@ -22,6 +22,7 @@ type Repository interface {
 
 	ListChats(limit, offset int) ([]Chat, int, error)
 	ListChatsByGroup(groupID uint, limit, offset int) ([]Chat, int, error)
+	ListChatsFiltered(filter ListFilter) ([]Chat, int, error)
 	GetChat(id uint) (Chat, error)
 	CreateChat(chat *Chat, user, assistant *Message) error
 	UpdateChat(chat *Chat) error
@@ -51,16 +52,19 @@ func NewGORMRepository(db *gorm.DB) Repository {
 }
 
 func (r *gormRepository) ListChats(limit, offset int) ([]Chat, int, error) {
-	return r.listChats(nil, limit, offset)
+	return r.ListChatsFiltered(ListFilter{Limit: limit, Offset: offset})
 }
 
 func (r *gormRepository) ListChatsByGroup(groupID uint, limit, offset int) ([]Chat, int, error) {
-	return r.listChats(&groupID, limit, offset)
+	return r.ListChatsFiltered(ListFilter{GroupID: &groupID, Limit: limit, Offset: offset})
 }
 
-// listChats applies the shared paging bounds and, when groupID is set, restricts
-// the query to that conversation group. A nil groupID means every chat.
-func (r *gormRepository) listChats(groupID *uint, limit, offset int) ([]Chat, int, error) {
+// ListChatsFiltered lists conversations matching filter. When filter.Source is
+// empty, source="bot" chats are excluded so channel sessions do not pollute the
+// Quick Assistant history.
+func (r *gormRepository) ListChatsFiltered(filter ListFilter) ([]Chat, int, error) {
+	limit := filter.Limit
+	offset := filter.Offset
 	if limit <= 0 || limit > MaxListLimit {
 		limit = DefaultListLimit
 	}
@@ -69,8 +73,19 @@ func (r *gormRepository) listChats(groupID *uint, limit, offset int) ([]Chat, in
 	}
 
 	scope := func(db *gorm.DB) *gorm.DB {
-		if groupID != nil {
-			return db.Where("group_id = ?", *groupID)
+		if filter.GroupID != nil {
+			db = db.Where("group_id = ?", *filter.GroupID)
+		}
+		switch filter.Source {
+		case SourceBot:
+			db = db.Where("source = ?", SourceBot)
+			if filter.BotChannelID > 0 {
+				db = db.Where("bot_channel_id = ?", filter.BotChannelID)
+			}
+		case SourceAll:
+			// no source filter
+		default:
+			db = db.Where("source <> ?", SourceBot)
 		}
 		return db
 	}
@@ -490,6 +505,8 @@ func chatFromRow(row database.Chat) Chat {
 		ModelName:    row.ModelName,
 		PromptID:     row.PromptID,
 		SystemPrompt: row.SystemPrompt,
+		Source:       row.Source,
+		BotChannelID: row.BotChannelID,
 		CreatedAt:    row.CreatedAt,
 		UpdatedAt:    row.UpdatedAt,
 	}
@@ -504,6 +521,8 @@ func chatToRow(chat Chat) database.Chat {
 		ModelName:    chat.ModelName,
 		PromptID:     chat.PromptID,
 		SystemPrompt: chat.SystemPrompt,
+		Source:       chat.Source,
+		BotChannelID: chat.BotChannelID,
 	}
 }
 

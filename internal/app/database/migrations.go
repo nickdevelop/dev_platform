@@ -624,6 +624,66 @@ var migrationSteps = []migrationStep{
 		}
 		return nil
 	}},
+	{version: 43, name: "extend_channel_bindings_and_bot_sources", run: func(tx *gorm.DB) error {
+		if tx.Migrator().HasTable(&Chat{}) {
+			for _, col := range []string{"source", "bot_channel_id"} {
+				if !tx.Migrator().HasColumn(&Chat{}, col) {
+					if err := tx.Migrator().AddColumn(&Chat{}, col); err != nil {
+						return err
+					}
+				}
+			}
+		}
+		if tx.Migrator().HasTable(&AgentSession{}) {
+			for _, col := range []string{"source", "bot_channel_id", "permission_mode"} {
+				if !tx.Migrator().HasColumn(&AgentSession{}, col) {
+					if err := tx.Migrator().AddColumn(&AgentSession{}, col); err != nil {
+						return err
+					}
+				}
+			}
+		}
+		if tx.Migrator().HasTable(&BotChannel{}) {
+			for _, col := range []string{
+				"target_mode",
+				"worktree_id",
+				"agent_model",
+				"active_session_id",
+				"typing_indicator",
+				"max_reply_length",
+			} {
+				if !tx.Migrator().HasColumn(&BotChannel{}, col) {
+					if err := tx.Migrator().AddColumn(&BotChannel{}, col); err != nil {
+						return err
+					}
+				}
+			}
+			// Backfill existing bot channels to assistant mode and default delivery parameters.
+			if err := tx.Model(&BotChannel{}).
+				Where("target_mode = '' OR target_mode IS NULL").
+				Update("target_mode", "assistant").Error; err != nil {
+				return err
+			}
+			if err := tx.Model(&BotChannel{}).
+				Where("max_reply_length <= 0").
+				Update("max_reply_length", 2000).Error; err != nil {
+				return err
+			}
+			// Mark existing channel-bound chats as bot-sourced so quick assistant history stays isolated.
+			if tx.Migrator().HasTable(&Chat{}) {
+				if err := tx.Exec(`
+					UPDATE chats
+					SET source = 'bot',
+					    bot_channel_id = COALESCE((SELECT id FROM bot_channels WHERE bot_channels.chat_id = chats.id LIMIT 1), 0)
+					WHERE id IN (SELECT chat_id FROM bot_channels WHERE chat_id > 0)
+					  AND (source = '' OR source IS NULL)
+				`).Error; err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}},
 }
 
 // Migrate brings the schema to the latest version: it creates the

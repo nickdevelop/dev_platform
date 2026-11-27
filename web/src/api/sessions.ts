@@ -30,6 +30,9 @@ export interface AgentSession {
   worktreeId?: number
   title?: string
   model?: string
+  source?: string
+  botChannelId?: number
+  permissionMode?: string
   status: SessionStatus
   turn: TurnState
   capabilities: Capabilities

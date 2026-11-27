@@ -205,4 +205,13 @@ describe('ProjectSessionItem', () => {
     })
     expect(wrapper.find('.session-open').classes()).toContain('border-platform-primary')
   })
+
+  it('renders BOT badge when session source is bot', () => {
+    const wrapper = mount(ProjectSessionItem, {
+      props: { session: mockSession({ source: 'bot', botChannelId: 7 }) },
+    })
+    const badge = wrapper.find('[data-test="session-bot-badge"]')
+    expect(badge.exists()).toBe(true)
+    expect(badge.text()).toBe('BOT')
+  })
 })

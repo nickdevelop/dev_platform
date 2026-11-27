@@ -310,6 +310,8 @@ cd web && npm run build              # 生产构建，关注 css/js 体积不要
 
 11. **Bot 引擎页增量落地（`BotEngineView.vue` / `BotChannelDialog.vue` / `BotQrLoginDialog.vue` / `BotChannelChatDrawer.vue`）**：严格按 Element Plus v2 与 `settings-page.css` / `entity-editor.css` 契约构建，复用 `EntityFormDialog` / `EngineStepControl` / `ListEmptyState` / `chat` 导出的 `MessageView` + `createChatStream`，零 `Ui*` 原语，渠道表格列宽控制在 866px 预算内，在 `shared/styles/entity-chip.css` 新增分类档位 `.entity-chip--wechat`（`--cat-hue-4`）。
 
+12. **消息渠道迁移至组织中心（`features/organization/channels/`：`ChannelListView.vue` / `ChannelEditDialog.vue` / `ChannelQrLoginDialog.vue` / `ChannelChatDrawer.vue`）**：从 `引擎 -> Bot 引擎` 迁移至 `组织 -> 消息渠道`（`/org/channels`，保留 `/engines/bot` 重定向并删除旧 `BotEngineView*` 组件），从画布表格转为与组织中心另四页完全同构的 `list-page.css` 三段式布局（`ListToolbar` + `el-table` + `ListEmptyState` + `el-pagination`）；在 `entity-chip.css` 新增模式分类档位 `.entity-chip--assistant`（`--cat-hue-1`）与 `.entity-chip--agent`（`--cat-hue-3`），支持「AI 助手」与「项目 + 角色 + 内置 Agent」双模表单与 `/new` 单渠道上下文切换。
+
 **待办**：
 
 1. 其余模块（任务、终端、工作区）按页面逐个迁移，每页一个 PR，随页更新本节清单（设置模块已随第 10 条全量迁完；其中的 `BuiltinDataPanel` / `AgentUsagePanel` 被引擎页内嵌，更早随引擎中心迁完）；新页面直接按 §四 布局契约与「列表的三态」写（三段式主体 + `.list-page-*` 类名，空态用 `ListEmptyState`，列表带分页），不要再写页头计数芯片、把工具条塞进页头、散装筛选行与自绘空态；**但设置中心的页用 `settings-page.css` 的 `.settings-page-*` / `.settings-panel*`，不要套三段式**（见 §四 的画布例外）。

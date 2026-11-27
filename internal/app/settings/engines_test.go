@@ -18,21 +18,16 @@ func TestEnginesSettingPersistence(t *testing.T) {
 	if initial.Steward.MaxSteps != 5 {
 		t.Errorf("got Steward.MaxSteps = %d, want 5", initial.Steward.MaxSteps)
 	}
-	if initial.Bot.MaxSteps != 10 || initial.Bot.MaxReplyLength != 2000 || len(initial.Bot.EnabledTools) == 0 {
-		t.Errorf("unexpected Bot defaults: %+v", initial.Bot)
-	}
 
 	initial.Steward.MaxSteps = 12
 	initial.Coder.PermissionMode = "trust"
 	initial.Orchestrator.MaxSteps = 30
-	initial.Bot.MaxSteps = 15
-	initial.Bot.EnabledTools = []string{"platform_list_projects", "platform_create_session"}
 
 	saved, err := svc.SetEngines(initial)
 	if err != nil {
 		t.Fatalf("svc.SetEngines: %v", err)
 	}
-	if saved.Steward.MaxSteps != 12 || saved.Coder.PermissionMode != "trust" || saved.Bot.MaxSteps != 15 {
+	if saved.Steward.MaxSteps != 12 || saved.Coder.PermissionMode != "trust" {
 		t.Errorf("saved setting mismatch: %+v", saved)
 	}
 
@@ -40,7 +35,7 @@ func TestEnginesSettingPersistence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("fetch svc.Engines: %v", err)
 	}
-	if fetched.Steward.MaxSteps != 12 || fetched.Coder.PermissionMode != "trust" || len(fetched.Bot.EnabledTools) != 2 {
+	if fetched.Steward.MaxSteps != 12 || fetched.Coder.PermissionMode != "trust" || fetched.Orchestrator.MaxSteps != 30 {
 		t.Errorf("fetched setting mismatch: %+v", fetched)
 	}
 }

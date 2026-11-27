@@ -2259,3 +2259,51 @@ description: 绘制 PlantUML 图表技能
 		t.Errorf("thirdPrompt unexpected:\n%s", thirdPrompt)
 	}
 }
+
+func TestCreateWithOptionsPersistsBotSourceAndPermissionMode(t *testing.T) {
+	env := newTestEnv(t)
+	defer env.svc.Close()
+	env.fake.createRef = &agents.SessionRef{
+		InstanceID: env.instanceID,
+		Backend:    agents.BackendPi,
+		SessionID:  "native-bot-1",
+	}
+
+	outcome, err := env.svc.CreateWithOptions(context.Background(), CreateOptions{
+		ProjectID:      env.projectID,
+		Backend:        agents.BackendPi,
+		Title:          "BOT任务",
+		Message:        "检查代码",
+		Model:          "m1",
+		Source:         "bot",
+		BotChannelID:   42,
+		PermissionMode: "auto",
+	})
+	if err != nil {
+		t.Fatalf("CreateWithOptions: %v", err)
+	}
+	if outcome.Session.Source != "bot" || outcome.Session.BotChannelID != 42 || outcome.Session.PermissionMode != "auto" {
+		t.Fatalf("unexpected session metadata: %+v", outcome.Session)
+	}
+
+	got, err := env.svc.Get(env.projectID, outcome.Session.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.Source != "bot" || got.BotChannelID != 42 || got.PermissionMode != "auto" {
+		t.Fatalf("persisted metadata mismatch: %+v", got)
+	}
+
+	if _, err := env.svc.Send(context.Background(), env.projectID, outcome.Session.ID, "继续执行", ""); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+
+	env.fake.mu.Lock()
+	defer env.fake.mu.Unlock()
+	if len(env.fake.createOpts) != 1 || env.fake.createOpts[0].PermissionMode != "auto" {
+		t.Fatalf("expected CreateSession PermissionMode=auto, got %+v", env.fake.createOpts)
+	}
+	if len(env.fake.sends) != 2 || env.fake.sends[0].PermissionMode != "auto" || env.fake.sends[1].PermissionMode != "auto" {
+		t.Fatalf("expected both SendMessage calls to carry PermissionMode=auto, got %+v", env.fake.sends)
+	}
+}

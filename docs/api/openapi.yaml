@@ -6730,17 +6730,6 @@ paths:
           description: Supported channel descriptors.
         '401':
           $ref: '#/components/responses/Unauthorized'
-  /bot/tools:
-    get:
-      summary: List configurable bot platform tools
-      operationId: listBotTools
-      security:
-        - cookieAuth: []
-      responses:
-        '200':
-          description: Bot tool catalog.
-        '401':
-          $ref: '#/components/responses/Unauthorized'
   /bot/channels:
     get:
       summary: List bot channels
@@ -6851,6 +6840,26 @@ paths:
       responses:
         '200':
           description: Channel stopped.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/CSRFRejected'
+  /bot/channels/{id}/new:
+    post:
+      summary: Create and bind a new conversation or session for a channel
+      operationId: resetBotChannelContext
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+        - $ref: '#/components/parameters/CSRFToken'
+      responses:
+        '200':
+          description: New context created and bound.
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':

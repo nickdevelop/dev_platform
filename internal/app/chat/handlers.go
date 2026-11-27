@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -133,21 +134,33 @@ type chatListResponse struct {
 func (s *Service) handleList(c *gin.Context) {
 	limit, _ := strconv.Atoi(c.Query("limit"))
 	offset, _ := strconv.Atoi(c.Query("offset"))
-	var (
-		chats []Chat
-		total int
-		err   error
-	)
+	filter := ListFilter{
+		Source: strings.TrimSpace(c.Query("source")),
+		Limit:  limit,
+		Offset: offset,
+	}
+	if filter.Source != SourceDefault && filter.Source != SourceBot && filter.Source != SourceAll {
+		respondError(c, http.StatusBadRequest, "invalid_request")
+		return
+	}
 	if rawGroup := c.Query("groupId"); rawGroup != "" {
 		groupID, parseErr := strconv.ParseUint(rawGroup, 10, 64)
 		if parseErr != nil {
 			respondError(c, http.StatusBadRequest, "invalid_request")
 			return
 		}
-		chats, total, err = s.ListByGroup(uint(groupID), limit, offset)
-	} else {
-		chats, total, err = s.List(limit, offset)
+		gid := uint(groupID)
+		filter.GroupID = &gid
 	}
+	if rawChannel := c.Query("channelId"); rawChannel != "" {
+		channelID, parseErr := strconv.ParseUint(rawChannel, 10, 64)
+		if parseErr != nil {
+			respondError(c, http.StatusBadRequest, "invalid_request")
+			return
+		}
+		filter.BotChannelID = uint(channelID)
+	}
+	chats, total, err := s.ListFiltered(filter)
 	if err != nil {
 		respondServiceError(c, err)
 		return

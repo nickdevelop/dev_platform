@@ -25,7 +25,6 @@ import (
 	"devplatform/internal/app/groups"
 	"devplatform/internal/app/instances"
 	"devplatform/internal/app/modelconfig"
-	"devplatform/internal/app/platformtools"
 	"devplatform/internal/app/projects"
 	"devplatform/internal/app/prompts"
 	"devplatform/internal/app/proxy"
@@ -85,15 +84,15 @@ func newFullDependencies(t *testing.T) Dependencies {
 	groupSvc := groups.NewService(groupRepo)
 	groupSvc.SetEventsManager(eventsMgr)
 	agentDataSvc := agentdata.NewService(db)
-	toolsExec := platformtools.NewExecutor(projSvc, promptSvc, sessionSvc)
 	botSvc := bot.NewService(
 		bot.NewRepository(db),
 		channels.NewRegistry(),
 		nil,
-		settingsSvc,
 		chatSvc,
-		toolsExec,
 		sessionSvc,
+		promptSvc,
+		projSvc,
+		agents.BackendBuiltin,
 		eventsMgr,
 	)
 	t.Cleanup(func() {

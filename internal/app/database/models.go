@@ -99,6 +99,9 @@ type AgentSession struct {
 	Title           string `gorm:"column:title"`
 	Model           string `gorm:"column:model"`
 	Status          string `gorm:"column:status;not null"`
+	Source          string `gorm:"column:source;size:32;not null;default:'';index"`
+	BotChannelID    uint   `gorm:"column:bot_channel_id;not null;default:0;index"`
+	PermissionMode  string `gorm:"column:permission_mode;size:32;not null;default:''"`
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }
@@ -252,6 +255,8 @@ type Chat struct {
 	ModelName    string `gorm:"column:model_name;not null"`
 	PromptID     uint   `gorm:"column:prompt_id;not null;default:0"`
 	SystemPrompt string `gorm:"column:system_prompt;type:text"`
+	Source       string `gorm:"column:source;size:32;not null;default:'';index"`
+	BotChannelID uint   `gorm:"column:bot_channel_id;not null;default:0;index"`
 	CreatedAt    time.Time
 	UpdatedAt    time.Time `gorm:"index:idx_chats_updated"`
 }
@@ -545,12 +550,18 @@ type BotChannel struct {
 	LastError        string     `gorm:"column:last_error;type:text"`
 	SecretRef        string     `gorm:"column:secret_ref"`
 	AccountID        string     `gorm:"column:account_id"`
+	TargetMode       string     `gorm:"column:target_mode;size:32;not null;default:'assistant'"`
 	ModelID          uint       `gorm:"column:model_id;not null;default:0"`
 	PromptID         uint       `gorm:"column:prompt_id;not null;default:0"`
 	SystemPrompt     string     `gorm:"column:system_prompt;type:text"`
 	DefaultProjectID uint       `gorm:"column:default_project_id;not null;default:0"`
+	WorktreeID       uint       `gorm:"column:worktree_id;not null;default:0"`
 	DefaultBackend   string     `gorm:"column:default_backend"`
+	AgentModel       string     `gorm:"column:agent_model;size:128"`
+	ActiveSessionID  string     `gorm:"column:active_session_id;size:64;index"`
+	TypingIndicator  bool       `gorm:"column:typing_indicator;not null;default:true"`
 	AutoNotify       bool       `gorm:"column:auto_notify;not null;default:true"`
+	MaxReplyLength   int        `gorm:"column:max_reply_length;not null;default:2000"`
 	ChatGroupID      uint       `gorm:"column:chat_group_id;not null;default:0;index"`
 	ChatID           uint       `gorm:"column:chat_id;not null;default:0;index"`
 	UpdateCursor     string     `gorm:"column:update_cursor;type:text"`

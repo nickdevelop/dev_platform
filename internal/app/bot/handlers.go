@@ -14,7 +14,6 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 	botGroup := r.Group("/bot")
 	{
 		botGroup.GET("/descriptors", s.handleListDescriptors)
-		botGroup.GET("/tools", s.handleListTools)
 		botGroup.GET("/channels", s.handleListChannels)
 		botGroup.POST("/channels", s.handleCreateChannel)
 		botGroup.GET("/channels/:id", s.handleGetChannel)
@@ -22,6 +21,7 @@ func (s *Service) RegisterRoutes(r gin.IRouter) {
 		botGroup.DELETE("/channels/:id", s.handleDeleteChannel)
 		botGroup.POST("/channels/:id/start", s.handleStartChannel)
 		botGroup.POST("/channels/:id/stop", s.handleStopChannel)
+		botGroup.POST("/channels/:id/new", s.handleResetChannelContext)
 		botGroup.POST("/channels/:id/login/qr", s.handleStartQRLogin)
 		botGroup.POST("/channels/:id/login/cancel", s.handleCancelQRLogin)
 		botGroup.GET("/channels/:id/login/status", s.handleQRLoginStatus)
@@ -66,8 +66,17 @@ func (s *Service) handleListDescriptors(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"descriptors": s.Descriptors()})
 }
 
-func (s *Service) handleListTools(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"tools": s.ToolCatalog()})
+func (s *Service) handleResetChannelContext(c *gin.Context) {
+	id, ok := parseChannelID(c)
+	if !ok {
+		return
+	}
+	ch, err := s.ResetChannelContext(c.Request.Context(), id)
+	if err != nil {
+		respondServiceError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, ch)
 }
 
 func (s *Service) handleListChannels(c *gin.Context) {
