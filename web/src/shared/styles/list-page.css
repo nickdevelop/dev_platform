@@ -50,7 +50,7 @@
   flex: 1 1 auto;
   flex-direction: column;
   min-height: 0;
-  padding: 0 0.5rem 0;
+  padding: 0 4px 4px;
 }
 
 .list-panel-toolbar {
