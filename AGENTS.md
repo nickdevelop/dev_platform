@@ -46,6 +46,11 @@
    模板里 `<el-*>` 由 `unplugin-vue-components` 自动按需引入，**不要手写 import**；
    函数式 API（`ElMessage / ElMessageBox / ElLoading`）才从 `'element-plus'` 显式 import。
    新增页面禁止再写 `Ui*` 原语；改造页面必须**整页**迁移，不得半页 `el-*` 半页 `Ui*`。
+1b. **右键上下文菜单走共享组件**：库没有右键菜单，全站统一用
+   `web/src/shared/components/ContextMenu.vue`（选型与例外登记见 v2 §五）——**一个宿主只挂一份菜单**，
+   列表/树只上报右键目标（主键 + 光标坐标），菜单项绑回宿主自己的 handler，展示层不自带菜单与动作
+   （文件树 `FileTree.vue` 就只 `emit('menu', {path,isDir,x,y})`）；已退化为行内 hover 按钮的写法不再新增，
+   行内动作一律收进右键。
 2. **唯一覆盖点**：对 Element Plus 的任何样式干预（`--el-*` 变量、`.el-*` 选择器、密度桥接）
    只能写在 `web/src/theme/element-tokens.css`；业务组件的 `<style>` 里出现即违规
    （`web/src/tests/ui-element-boundary.spec.ts` 拦截，并冻结 `Ui*` 引用数——只准降不准升）。

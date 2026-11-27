@@ -4,6 +4,8 @@ import { createPinia, setActivePinia } from 'pinia'
 import { useFileTreeStateStore } from '../stores/fileTreeState'
 import { useProjectTerminalStore } from '../stores/projectTerminal'
 import { getDirectory, isExternalUrl, resolveRelativePath } from '../features/files/pathUtils'
+import ContextMenu from '../shared/components/ContextMenu.vue'
+import type { ContextMenuAnchor, ContextMenuItem } from '../shared/components/contextMenu'
 import FileTree from '../features/files/FileTree.vue'
 import FileSidebar from '../features/files/FileSidebar.vue'
 import CodeView from '../features/files/CodeView.vue'
@@ -15,6 +17,16 @@ import HtmlPreviewModal from '../features/files/HtmlPreviewModal.vue'
 import FileViewer from '../features/files/FileViewer.vue'
 import * as filesApi from '../api/files'
 import type { FileTreeNode, GitStatusItem } from '../features/files/types'
+
+// The context menu teleports to `body`, so every test reaches it through the
+// document rather than through the wrapper.
+function menuItems(menu: Element): HTMLButtonElement[] {
+  return [...menu.querySelectorAll<HTMLButtonElement>('[data-test="context-menu-item"]')]
+}
+
+function menuLabels(menu: Element): string[] {
+  return menuItems(menu).map((item) => item.textContent?.trim() ?? '')
+}
 
 describe('pathUtils', () => {
   it('extracts base directory correctly', () => {
@@ -159,27 +171,114 @@ describe('FileTree.vue', () => {
     })
   })
 
-  it('emits download, delete and uploadTo on action clicks', async () => {
+  it('has no per-row buttons and reports a right click as a menu target', async () => {
     const wrapper = mount(FileTree, {
       props: {
         nodes: sampleNodes,
       },
     })
 
-    const downloadBtn = wrapper.find('button[title="下载文件"]')
-    expect(downloadBtn.exists()).toBe(true)
-    await downloadBtn.trigger('click')
-    expect(wrapper.emitted('download')?.[0]).toEqual(['README.md'])
+    // The upload / download / delete buttons are gone from the rows.
+    expect(wrapper.find('.file-node-actions').exists()).toBe(false)
+    expect(wrapper.findAll('.file-tree-row button')).toHaveLength(0)
 
-    const uploadToBtn = wrapper.find('button[title="上传文件到此目录"]')
-    expect(uploadToBtn.exists()).toBe(true)
-    await uploadToBtn.trigger('click')
-    expect(wrapper.emitted('uploadTo')?.[0]).toEqual(['src'])
+    const fileRow = wrapper.findAll('.file-tree-row').find((r) => r.text().includes('README.md'))
+    await fileRow?.trigger('contextmenu', { clientX: 42, clientY: 77 })
+    expect(wrapper.emitted('menu')?.[0]).toEqual([{ path: 'README.md', isDir: false, x: 42, y: 77 }])
 
-    const deleteBtn = wrapper.find('button[title="删除文件"]')
-    expect(deleteBtn.exists()).toBe(true)
-    await deleteBtn.trigger('click')
-    expect(wrapper.emitted('delete')?.[0]).toEqual(['README.md', false])
+    const dirRow = wrapper.findAll('.file-tree-row').find((r) => r.text().includes('src'))
+    await dirRow?.trigger('contextmenu', { clientX: 8, clientY: 9 })
+    expect(wrapper.emitted('menu')?.[1]).toEqual([{ path: 'src', isDir: true, x: 8, y: 9 }])
+  })
+})
+
+describe('ContextMenu.vue', () => {
+  // One item list per mount, with the spies a test needs to read back.
+  function makeItems() {
+    const download = vi.fn()
+    const copyAbsolute = vi.fn()
+    const remove = vi.fn()
+    const items: ContextMenuItem[] = [
+      { label: '下载', icon: 'download', onSelect: download },
+      { label: '复制绝对路径', icon: 'copy', disabled: true, onSelect: copyAbsolute },
+      { label: '删除文件', icon: 'trash', danger: true, divider: true, onSelect: remove },
+    ]
+    return { items, download, copyAbsolute, remove }
+  }
+
+  function mountMenu(anchor: ContextMenuAnchor | null, fixture = makeItems()) {
+    const wrapper = mount(ContextMenu, { props: { anchor, items: fixture.items }, attachTo: document.body })
+    return { wrapper, fixture }
+  }
+
+  function menuEl(): HTMLElement | null {
+    return document.querySelector('[data-test="context-menu"]')
+  }
+
+  it('renders no menu without an anchor', () => {
+    const { wrapper } = mountMenu(null)
+    expect(menuEl()).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('renders the items at the anchor and runs the chosen action', async () => {
+    const { wrapper, fixture } = mountMenu({ x: 120, y: 200 })
+    await flushPromises()
+    const menu = menuEl()
+    expect(menu).toBeTruthy()
+    expect(menu!.style.left).toBe('120px')
+    expect(menu!.style.top).toBe('200px')
+
+    const buttons = menuItems(menu!)
+    expect(buttons.map((b) => b.textContent?.trim())).toEqual(['下载', '复制绝对路径', '删除文件'])
+    expect(buttons[1].disabled).toBe(true)
+    expect(buttons[2].classList.contains('is-danger')).toBe(true)
+    expect(buttons[2].classList.contains('has-divider')).toBe(true)
+
+    buttons[0].click()
+    await flushPromises()
+    expect(fixture.download).toHaveBeenCalled()
+    expect(wrapper.emitted('close')).toBeTruthy()
+    wrapper.unmount()
+  })
+
+  it('never runs a disabled action', async () => {
+    const { wrapper, fixture } = mountMenu({ x: 120, y: 200 })
+    await flushPromises()
+    const menu = menuEl()!
+    menuItems(menu)[1].click()
+    await flushPromises()
+    expect(fixture.copyAbsolute).not.toHaveBeenCalled()
+    expect(wrapper.emitted('close')).toBeFalsy()
+    wrapper.unmount()
+  })
+
+  it('pushes the menu back inside the viewport', async () => {
+    const { wrapper } = mountMenu({ x: window.innerWidth - 2, y: window.innerHeight - 2 })
+    await flushPromises()
+    const menu = menuEl()!
+    expect(parseFloat(menu.style.left)).toBeLessThanOrEqual(window.innerWidth - 8)
+    expect(parseFloat(menu.style.top)).toBeLessThanOrEqual(window.innerHeight - 8)
+    wrapper.unmount()
+  })
+
+  it('closes on Escape and on a press outside the menu', () => {
+    const first = mountMenu({ x: 40, y: 40 })
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    expect(first.wrapper.emitted('close')).toBeTruthy()
+    first.wrapper.unmount()
+
+    const second = mountMenu({ x: 40, y: 40 })
+    document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    expect(second.wrapper.emitted('close')).toBeTruthy()
+    second.wrapper.unmount()
+  })
+
+  it('ignores a press inside the menu', () => {
+    const { wrapper } = mountMenu({ x: 40, y: 40 })
+    menuEl()!.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+    expect(wrapper.emitted('close')).toBeFalsy()
+    wrapper.unmount()
   })
 })
 
@@ -311,6 +410,75 @@ describe('FileSidebar.vue', () => {
 
     expect(wrapper.text()).toContain('helper.ts')
   })
+  it('opens the file actions in a context menu, with no buttons in the rows', async () => {
+    vi.spyOn(filesApi, 'getFileTree').mockResolvedValue([
+      { name: 'src', path: 'src', isDir: true },
+      { name: 'README.md', path: 'README.md', isDir: false },
+    ])
+    vi.spyOn(filesApi, 'getGitStatus').mockResolvedValue([])
+    vi.spyOn(filesApi, 'getGitCommits').mockResolvedValue([])
+
+    const wrapper = mount(FileSidebar, {
+      props: { projectId: 1, directory: '/ws/demo' },
+      attachTo: document.body,
+    })
+    await vi.waitFor(() => expect(wrapper.text()).toContain('README.md'))
+    expect(wrapper.find('.file-node-actions').exists()).toBe(false)
+
+    const row = wrapper.findAll('.file-tree-row').find((r) => r.text().includes('README.md'))!
+    await row.trigger('contextmenu', { clientX: 30, clientY: 30 })
+    const menu = document.querySelector('[data-test="context-menu"]')
+    expect(menu).toBeTruthy()
+    expect(menuLabels(menu!)).toEqual(['打开', '下载', '复制相对路径', '复制绝对路径', '删除文件'])
+
+    // 打开 is what the left click always did.
+    menuItems(menu!)[0].click()
+    await flushPromises()
+    expect(wrapper.emitted('select')?.[0]).toEqual(['README.md', { mode: 'view' }])
+    expect(document.querySelector('[data-test="context-menu"]')).toBeNull()
+
+    // Deleting still goes through the confirmation dialog, and the menu is gone.
+    await row.trigger('contextmenu', { clientX: 30, clientY: 30 })
+    const again = document.querySelector('[data-test="context-menu"]')!
+    menuItems(again).at(-1)!.click()
+    await flushPromises()
+    expect(document.querySelector('[data-test="context-menu"]')).toBeNull()
+    expect(wrapper.find('[data-test="delete-confirm-dialog"]').exists()).toBe(true)
+
+    wrapper.unmount()
+  })
+
+  it('offers the directory actions and expands the folder from the menu', async () => {
+    const getFileTreeSpy = vi.spyOn(filesApi, 'getFileTree').mockImplementation(async (_pid, path) => {
+      if (!path) return [{ name: 'src', path: 'src', isDir: true }]
+      return [{ name: 'index.ts', path: 'src/index.ts', isDir: false }]
+    })
+    vi.spyOn(filesApi, 'getGitStatus').mockResolvedValue([])
+    vi.spyOn(filesApi, 'getGitCommits').mockResolvedValue([])
+
+    const wrapper = mount(FileSidebar, {
+      props: { projectId: 1, directory: '/ws/demo' },
+      attachTo: document.body,
+    })
+    await vi.waitFor(() => expect(wrapper.text()).toContain('src'))
+
+    const row = wrapper.findAll('.file-tree-row').find((r) => r.text().includes('src'))!
+    await row.trigger('contextmenu', { clientX: 20, clientY: 20 })
+    const menu = document.querySelector('[data-test="context-menu"]')!
+    expect(menuLabels(menu)).toEqual(['展开', '上传到此目录', '复制相对路径', '复制绝对路径', '删除目录'])
+
+    menuItems(menu)[0].click()
+    await vi.waitFor(() => expect(wrapper.text()).toContain('index.ts'))
+    expect(getFileTreeSpy).toHaveBeenCalledWith(1, 'src', undefined)
+
+    // The same row, now open, offers the opposite gesture.
+    await row.trigger('contextmenu', { clientX: 20, clientY: 20 })
+    const second = document.querySelector('[data-test="context-menu"]')!
+    expect(menuLabels(second)[0]).toBe('折叠')
+
+    wrapper.unmount()
+  })
+
   it('switches between changes and all files tabs', async () => {
     vi.spyOn(filesApi, 'getFileTree').mockResolvedValue([
       { name: 'app.vue', path: 'app.vue', isDir: false },

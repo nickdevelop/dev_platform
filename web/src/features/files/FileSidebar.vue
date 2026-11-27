@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { ElMessage } from 'element-plus'
 import {
   commitGitChanges,
   deleteFile,
@@ -18,13 +19,22 @@ import { getProjectGitInfo } from '../../api/git'
 import { useFileTreeStateStore } from '../../stores/fileTreeState'
 import { useProjectsStore } from '../../stores/projects'
 import { useProjectTerminalStore } from '../../stores/projectTerminal'
+import { copyToClipboard } from '../../shared/clipboard'
+import ContextMenu from '../../shared/components/ContextMenu.vue'
+import type { ContextMenuItem } from '../../shared/components/contextMenu'
 import { UiButton, UiDialog, UiProgress } from '../../shared/ui'
 import ChangeTree from './ChangeTree.vue'
 import { buildChangeTree } from './changeTreeUtil'
 import FileTree from './FileTree.vue'
 import GitCommitBar from './GitCommitBar.vue'
 import GitCommitDetailBar from './GitCommitDetailBar.vue'
-import type { FileTreeNode, GitCommitItem, GitFileChangeStatus, GitStatusItem } from './types'
+import type {
+  FileTreeNode,
+  FileTreeMenuTarget,
+  GitCommitItem,
+  GitFileChangeStatus,
+  GitStatusItem,
+} from './types'
 
 const props = withDefaults(
   defineProps<{
@@ -598,6 +608,91 @@ async function confirmDelete() {
     deleting.value = false
   }
 }
+
+// --- Tree context menu -------------------------------------------------------
+// A tree row carries no buttons of its own: a right click reports the node and
+// the cursor, and the items below bind the very handlers the row used to expose,
+// plus opening the node and copying its path.
+const treeMenu = ref<FileTreeMenuTarget | null>(null)
+
+function findTreeNode(nodes: FileTreeNode[], path: string): FileTreeNode | null {
+  for (const node of nodes) {
+    if (node.path === path) return node
+    if (node.isDir && node.children) {
+      const hit = findTreeNode(node.children, path)
+      if (hit) return hit
+    }
+  }
+  return null
+}
+
+// Absolute path of a tree node: the workspace directory this sidebar is scoped
+// to, joined without doubling separators. Empty when the directory is unknown,
+// which is what greys the item out.
+function workspacePathOf(path: string): string {
+  const base = workspaceDir.value.replace(/\/+$/, '')
+  if (!base) return ''
+  return `${base}/${path.replace(/^\/+/, '')}`
+}
+
+async function copyTreeNodePath(path: string, absolute: boolean) {
+  const value = absolute ? workspacePathOf(path) : path
+  if (!value) return
+  const copied = await copyToClipboard(value)
+  if (copied) ElMessage.success(`已复制${absolute ? '绝对' : '相对'}路径`)
+  else ElMessage.error('复制失败')
+}
+
+// Same as clicking the row: a directory that was never opened is fetched first,
+// otherwise it would expand into an empty one.
+async function toggleTreeNodeFromMenu(path: string) {
+  if (!expandedTreePaths.value.has(path)) {
+    const node = findTreeNode(treeNodes.value, path)
+    if (node && !node.loaded && (!node.children || node.children.length === 0)) {
+      await onLoadChildren(node)
+    }
+  }
+  toggleTreePath(path)
+}
+
+const treeMenuItems = computed<ContextMenuItem[]>(() => {
+  const target = treeMenu.value
+  if (!target) return []
+  const path = target.path
+  const copyItems: ContextMenuItem[] = [
+    { label: '复制相对路径', icon: 'copy', onSelect: () => copyTreeNodePath(path, false) },
+    {
+      label: '复制绝对路径',
+      icon: 'copy',
+      disabled: !workspaceDir.value,
+      onSelect: () => copyTreeNodePath(path, true),
+    },
+  ]
+  if (target.isDir) {
+    return [
+      {
+        label: expandedTreePaths.value.has(path) ? '折叠' : '展开',
+        icon: 'folder',
+        onSelect: () => toggleTreeNodeFromMenu(path),
+      },
+      { label: '上传到此目录', icon: 'upload', disabled: uploading.value, onSelect: () => triggerUpload(path) },
+      ...copyItems,
+      {
+        label: '删除目录',
+        icon: 'trash',
+        danger: true,
+        divider: true,
+        onSelect: () => onDeleteFile(path, true),
+      },
+    ]
+  }
+  return [
+    { label: '打开', icon: 'open', onSelect: () => onSelectAllFile(path) },
+    { label: '下载', icon: 'download', onSelect: () => onDownloadFile(path) },
+    ...copyItems,
+    { label: '删除文件', icon: 'trash', danger: true, divider: true, onSelect: () => onDeleteFile(path, false) },
+  ]
+})
 </script>
 
 <template>
@@ -1093,9 +1188,7 @@ async function confirmDelete() {
           @dragstart="onDragStart"
           @load-children="onLoadChildren"
           @toggle="toggleTreePath"
-          @download="onDownloadFile"
-          @delete="onDeleteFile"
-          @upload-to="triggerUpload"
+          @menu="treeMenu = $event"
         />
       </div>
     </div>
@@ -1118,6 +1211,9 @@ async function confirmDelete() {
       @reset="selectedCommit = ''"
     />
     </template>
+
+    <!-- File actions, opened where the user right-clicked a tree row -->
+    <ContextMenu :anchor="treeMenu" :items="treeMenuItems" @close="treeMenu = null" />
 
     <!-- Discard Confirmation Dialog -->
     <UiDialog

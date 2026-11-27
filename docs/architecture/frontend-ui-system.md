@@ -201,6 +201,7 @@
 | 列表页页头与节奏 | `shared/styles/list-page.css`（`.list-page-*`） | 页头、工具条槽、表格容器、枚举筛选档位；只放平台自己的类与 token，禁止 `.el-*` / `--el-*` |
 | 列表页工具条 | `shared/components/ListToolbar.vue`（左动作 / 右搜索表单 + 搜索 + 重置） | 见 §四 布局契约；枚举筛选放 `#filters` 插槽用 `el-select` |
 | 弹层/浮层 | `el-dropdown` / `el-popover` / `el-tooltip` | 禁止 `backdrop-filter: blur`（v1 禁令继续有效，遮罩为中性半透明）；库的 `is-dark` 变体拿文字色当底色与描边，已统一改回平台浮层表面 + 强描边（tooltip 最大宽度 720px），均入 token 层 |
+| **右键上下文菜单** | `shared/components/ContextMenu.vue`（`anchor{x,y}` + `items[]`，类型在 `shared/components/contextMenu.ts`） | 库没有右键菜单：`el-dropdown` 的 `trigger="contextmenu"` 要逐行包一层实例（文件树数百行不可接受），单实例 + `virtual-triggering` 只会贴参考盒、贴不住光标。**一个宿主只挂一份菜单**，由树 / 列表上报 `menu` 目标（path + 光标坐标），宿主把菜单项绑到自己的 handler（展示层不自带菜单）；组件 `Teleport` 到 body + `position: fixed` + 视口夹取，靠 document 捕获阶段的 `mousedown` / Esc / scroll / resize 关闭——**不用全屏 backdrop**，否则下一次右键要点两下；菜单项图标用组件自带的受控枚举（`open / folder / upload / download / copy / trash`），破坏项 `danger + divider`；`SessionTabs` 的标签页菜单为历史实现，待合并 |
 | 图标 | `@element-plus/icons-vue`（`<el-icon>` 包裹） | 仍受 v1「零 Emoji、纯矢量细线条」约束；库内没有的业务符号继续用现有 1.5–1.8px 手绘 SVG |
 | 日期/时间 | `el-date-picker` / `el-time-picker` | 新增即用，不再排期 |
 | 侧栏导航 | `el-menu`（`router` 模式，见 §八） | 子级用 `el-sub-menu` 预留；条目高度 / hover 中性化 / 左缘 accent 标尺三项覆盖已入 token 层 |

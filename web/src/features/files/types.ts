@@ -10,6 +10,15 @@ export interface FileTreeNode {
   loaded?: boolean
 }
 
+// A right-clicked tree row: which node, and where on screen the cursor was, so
+// the host can open the file actions menu under it.
+export interface FileTreeMenuTarget {
+  path: string
+  isDir: boolean
+  x: number
+  y: number
+}
+
 export interface FileContentResponse {
   path: string
   size: number

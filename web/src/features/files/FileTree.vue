@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import type { FileTreeNode, GitFileChangeStatus } from './types'
+import type { FileTreeNode, FileTreeMenuTarget, GitFileChangeStatus } from './types'
 
 // Expansion is either owned by the caller (pass expandedPaths and handle
 // toggle, so the state survives the tree unmounting) or kept here when the
@@ -25,9 +25,10 @@ const emit = defineEmits<{
   dragstart: [event: DragEvent, path: string]
   loadChildren: [node: FileTreeNode]
   toggle: [path: string]
-  download: [path: string]
-  delete: [path: string, isDir: boolean]
-  uploadTo: [dirPath: string]
+  // A row was right-clicked. The tree itself owns no menu and no action: it
+  // reports which node and where the cursor was, and the host that owns the
+  // actions (FileSidebar) opens the context menu there.
+  menu: [target: FileTreeMenuTarget]
 }>()
 
 const localExpanded = ref<Set<string>>(new Set())
@@ -72,6 +73,12 @@ function onDragStart(event: DragEvent, path: string) {
     event.dataTransfer.effectAllowed = 'copy'
   }
   emit('dragstart', event, path)
+}
+
+// Right click is the only way to reach a row's actions, so the browser's own
+// menu is suppressed (the template uses the prevent modifier).
+function onContextMenu(node: FileTreeNode, event: MouseEvent) {
+  emit('menu', { path: node.path, isDir: node.isDir, x: event.clientX, y: event.clientY })
 }
 
 export type FileKind = 'folder' | 'markdown' | 'diagram' | 'image' | 'code' | 'config' | 'file'
@@ -120,7 +127,7 @@ defineExpose({
   <ul class="file-tree-list list-none m-0 p-0 select-none">
     <li v-for="node in props.nodes" :key="node.path" class="file-tree-item">
       <div
-        class="file-tree-row group flex items-center gap-1.5 h-7 px-2 rounded cursor-pointer transition-colors text-xs"
+        class="file-tree-row flex items-center gap-1.5 h-7 px-2 rounded cursor-pointer transition-colors text-xs"
         :class="[
           props.activePath === node.path
             ? 'is-active bg-platform-primary-soft text-platform-primary font-medium'
@@ -132,6 +139,7 @@ defineExpose({
         :draggable="!node.isDir"
         @click="onNodeClick(node)"
         @dragstart="onDragStart($event, node.path)"
+        @contextmenu.prevent="onContextMenu(node, $event)"
       >
         <span
           v-if="node.isDir"
@@ -192,50 +200,6 @@ defineExpose({
         </span>
         <span class="file-name truncate flex-1 min-w-0" :title="node.path">{{ node.name }}</span>
 
-        <!-- Hover Actions: upload (folder), download (file), delete (both) -->
-        <div class="file-node-actions opacity-0 group-hover:opacity-100 flex items-center gap-0.5 shrink-0 transition-opacity">
-          <!-- Upload to folder button -->
-          <button
-            v-if="node.isDir"
-            type="button"
-            class="action-icon-btn p-0.5 rounded text-platform-text-muted hover:text-platform-text hover:bg-platform-surface transition-colors cursor-pointer"
-            title="上传文件到此目录"
-            aria-label="上传文件到此目录"
-            @click.stop="emit('uploadTo', node.path)"
-          >
-            <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6">
-              <path d="M8 11V2M4 5l4-3 4 3M2 13h12" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-          </button>
-
-          <!-- Download file button -->
-          <button
-            v-else
-            type="button"
-            class="action-icon-btn p-0.5 rounded text-platform-text-muted hover:text-platform-text hover:bg-platform-surface transition-colors cursor-pointer"
-            title="下载文件"
-            aria-label="下载文件"
-            @click.stop="emit('download', node.path)"
-          >
-            <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6">
-              <path d="M8 2v9M4 8l4 3 4-3M2 13h12" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-          </button>
-
-          <!-- Delete file/folder button -->
-          <button
-            type="button"
-            class="action-icon-btn p-0.5 rounded text-platform-text-muted hover:text-platform-danger hover:bg-platform-surface transition-colors cursor-pointer"
-            :title="node.isDir ? '删除目录' : '删除文件'"
-            :aria-label="node.isDir ? '删除目录' : '删除文件'"
-            @click.stop="emit('delete', node.path, node.isDir)"
-          >
-            <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.6">
-              <path d="M3 4h10M6 4V2.5h4V4M5 4v9h6V4" stroke-linecap="round" stroke-linejoin="round" />
-            </svg>
-          </button>
-        </div>
-
         <span
           v-if="!node.isDir && props.gitChangesMap.get(node.path)"
           class="git-badge shrink-0 px-1.5 py-0.5 text-2xs font-mono rounded font-semibold border"
@@ -285,9 +249,7 @@ defineExpose({
         @dragstart="(e, p) => emit('dragstart', e, p)"
         @load-children="(n) => emit('loadChildren', n)"
         @toggle="toggleExpand"
-        @download="(p) => emit('download', p)"
-        @delete="(p, d) => emit('delete', p, d)"
-        @upload-to="(p) => emit('uploadTo', p)"
+        @menu="(t) => emit('menu', t)"
       />
     </li>
   </ul>
